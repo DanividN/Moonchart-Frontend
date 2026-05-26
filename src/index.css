@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-sans antialiased bg-dark-bg text-dark-text;
+  }
+}
+
+/* Custom scrollbars for a premium developer/composer vibe */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #18181b; /* zinc-900 */
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a; /* zinc-800 */
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46; /* zinc-700 */
+}
+
+/* Neon glow utility classes */
+.glow-green {
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+.glow-red {
+  box-shadow: 0 0 10px rgba(244, 63, 94, 0.4);
+}
+.glow-yellow {
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.4);
+}
+.glow-blue {
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+}
+.glow-orange {
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.4);
+}
+.glow-purple {
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+}

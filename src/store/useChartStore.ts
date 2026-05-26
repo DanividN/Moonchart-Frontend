@@ -9,6 +9,7 @@ export interface Note {
   difficulty: 'easy' | 'medium' | 'hard' | 'expert';
   instrument: 'guitar' | 'bass' | 'drums' | 'vocals';
   type?: 'strum' | 'hopo' | 'tap' | 'kick_pedal' | 'star_power' | 'solo';
+  lyric?: string;
 }
 
 export interface AISuggestion {
@@ -19,6 +20,7 @@ export interface AISuggestion {
   reason: string;
   duration?: number;
   type?: 'strum' | 'hopo' | 'tap' | 'kick_pedal' | 'star_power' | 'solo';
+  lyric?: string;
 }
 
 export interface ValidationWarning {
@@ -80,6 +82,7 @@ interface ChartState {
   // --- AI Co-pilot State ---
   aiSuggestions: AISuggestion[];
   validationWarnings: ValidationWarning[];
+  lyricsText: string;
 
   // --- Undo/Redo Engine History Queues ---
   historyPast: Note[][];
@@ -102,6 +105,8 @@ interface ChartState {
   setActiveSustainDuration: (dur: number) => void;
   updateNoteDuration: (id: string, duration: number) => void;
   updateMetadata: (meta: Partial<ChartState['metadata']>) => void;
+  setLyricsText: (text: string) => void;
+  updateNoteLyric: (id: string, lyric: string) => void;
   
   
   
@@ -186,6 +191,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
   validationWarnings: [
     { id: 'w-1', tick: 768, message: 'Posible overcharting: notas repetidas a alta velocidad en Fácil.', severity: 'warning' }
   ],
+  lyricsText: '',
 
   historyPast: [],
   historyFuture: [],
@@ -198,6 +204,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
   setActiveDifficulty: (diff) => set({ activeDifficulty: diff }),
   setSnapToGrid: (snap) => set({ snapToGrid: snap }),
   setSongName: (name) => set({ songName: name }),
+  setLyricsText: (text) => set({ lyricsText: text }),
+  updateNoteLyric: (id, lyric) => set((state) => ({ notes: state.notes.map(n => n.id === id ? { ...n, lyric } : n) })),
   setAudioFile: (file) => {
     const cleanName = file ? file.name.replace(/\.[^/.]+$/, "") : 'demo_song';
     set((state) => ({ 
@@ -340,12 +348,24 @@ export const useChartStore = create<ChartState>((set, get) => ({
     const suggestion = get().aiSuggestions.find(s => s.id === id);
     if (!suggestion) return;
 
+    let lyricText = undefined;
+    if (get().activeInstrument === 'vocals') {
+      const words = get().lyricsText.trim().split(/\s+/).filter(Boolean);
+      if (words.length > 0) {
+        const existingVocNotes = get().notes.filter(n => n.instrument === 'vocals' && n.difficulty === get().activeDifficulty);
+        lyricText = words[existingVocNotes.length % words.length];
+      } else {
+        lyricText = suggestion.lyric || 'la';
+      }
+    }
+
     // Add note
     get().addNote({
       tick: suggestion.tick,
       lane: suggestion.lane,
       duration: suggestion.duration || 0,
-      type: suggestion.type || (get().activeInstrument === 'drums' && suggestion.lane === 0 ? 'kick_pedal' : get().activeNoteType)
+      type: suggestion.type || (get().activeInstrument === 'drums' && suggestion.lane === 0 ? 'kick_pedal' : get().activeNoteType),
+      lyric: lyricText
     } as any);
 
     // Remove from suggestions
@@ -354,18 +374,28 @@ export const useChartStore = create<ChartState>((set, get) => ({
     });
   },
   acceptAllSuggestions: () => {
-    const { aiSuggestions, activeDifficulty, activeInstrument, notes } = get();
+    const { aiSuggestions, activeDifficulty, activeInstrument, notes, lyricsText } = get();
     if (aiSuggestions.length === 0) return;
 
     // Push history once to support a single Undo operation!
     get().pushHistory();
 
-    const noteType = activeInstrument === 'drums' ? 'strum' : get().activeNoteType;
+    const noteType = activeInstrument === 'vocals' ? undefined : (activeInstrument === 'drums' ? 'strum' : get().activeNoteType);
+    const words = activeInstrument === 'vocals' ? lyricsText.trim().split(/\s+/).filter(Boolean) : [];
 
-    const newNotes = aiSuggestions.map((sug) => {
+    const newNotes = aiSuggestions.map((sug, idx) => {
       const isKick = activeInstrument === 'drums' && sug.lane === 0;
       const type: Note['type'] = sug.type || (isKick ? 'kick_pedal' : (activeInstrument === 'drums' ? 'strum' : noteType));
       
+      let lyricText = undefined;
+      if (activeInstrument === 'vocals') {
+        if (words.length > 0) {
+          lyricText = words[idx % words.length];
+        } else {
+          lyricText = sug.lyric || 'la';
+        }
+      }
+
       return {
         id: `note-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${sug.tick}`,
         tick: sug.tick,
@@ -373,7 +403,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
         duration: sug.duration || 0,
         difficulty: activeDifficulty,
         instrument: activeInstrument,
-        type
+        type,
+        lyric: lyricText
       };
     });
 

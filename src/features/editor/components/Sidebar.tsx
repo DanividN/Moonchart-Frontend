@@ -25,10 +25,24 @@ export const Sidebar: React.FC = () => {
     setProcessingJob,
     setSuggestions,
     setWarnings,
-    acceptAISuggestion,
     acceptAllSuggestions,
-    clearNotes
+    acceptAISuggestion,
+    clearNotes,
+    lyricsText,
+    setLyricsText
   } = useChartStore();
+
+  const handleLyricsFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        setLyricsText(text);
+      };
+      reader.readAsText(file);
+    }
+  };
 
   const handleTriggerAI = async () => {
     if (!audioFile) {
@@ -276,6 +290,35 @@ export const Sidebar: React.FC = () => {
           )}
         </div>
 
+        {/* If vocals are active, render lyrics uploader before the AI Trigger */}
+        {activeInstrument === 'vocals' && (
+          <div className="mb-4 bg-zinc-900/50 p-3 rounded-lg border border-dark-border space-y-2">
+            <div className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider">
+              Letras de la Canción (.txt)
+            </div>
+            <p className="text-[10px] text-dark-muted">
+              Carga un archivo de texto con la letra para que la IA la sincronice palabra por palabra con los compases de la voz.
+            </p>
+            
+            <label className="block w-full py-1.5 px-3 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] font-bold text-zinc-200 border border-dark-border text-center cursor-pointer transition-all">
+              📁 Seleccionar archivo .txt
+              <input
+                type="file"
+                accept=".txt"
+                onChange={handleLyricsFileUpload}
+                className="hidden"
+              />
+            </label>
+            
+            <textarea
+              value={lyricsText}
+              onChange={(e) => setLyricsText(e.target.value)}
+              placeholder="Escribe o edita la letra aquí. Cada palabra se sincronizará con un pico vocal..."
+              className="w-full h-24 bg-zinc-950 border border-dark-border text-[10px] text-zinc-300 rounded p-2 outline-none resize-none font-mono focus:border-cyan-500"
+            />
+          </div>
+        )}
+
         {/* Trigger analysis button */}
         <button
           onClick={handleTriggerAI}
@@ -287,7 +330,9 @@ export const Sidebar: React.FC = () => {
           }`}
         >
           <Sparkles size={14} />
-          {processingStatus === 'processing' ? 'Analizando audio...' : 'Autogenerar Notas con IA'}
+          {processingStatus === 'processing' 
+            ? (activeInstrument === 'vocals' ? 'Sincronizando lírica...' : 'Analizando audio...') 
+            : (activeInstrument === 'vocals' ? 'Autogenerar Lírica con IA' : 'Autogenerar Notas con IA')}
         </button>
 
         {/* AI Recommendations Dashboard */}

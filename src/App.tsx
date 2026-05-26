@@ -36,22 +36,32 @@ const App: React.FC = () => {
   const exportToChartFile = (notesList: any[], beatsPerMin: number, activeMeta: typeof metadata, resolution: number = 192) => {
     let output = `[Song]\n{\n  Name = "${activeMeta.name}"\n  Artist = "${activeMeta.artist}"\n  Charter = "${activeMeta.charter}"\n  Album = "${activeMeta.album}"\n  Year = ", ${activeMeta.year}"\n  Genre = "${activeMeta.genre}"\n  Offset = 0\n  Resolution = ${resolution}\n  Player2 = easy\n  Difficulty = 0\n  PreviewStart = 0\n  PreviewLength = 0\n  SyncTrack = 0\n}\n`;
     output += `[SyncTrack]\n{\n  0 = TS 4\n  0 = B ${beatsPerMin * 1000}\n}\n`;
-    output += `[Events]\n{\n}\n`;
+
+    // Serialize Vocals inside Events track as Clone Hero standard lyrics
+    const vocalNotes = notesList.filter(n => n.instrument === 'vocals' && n.difficulty === activeDifficulty);
+    output += `[Events]\n{\n`;
+    vocalNotes.forEach(note => {
+      const lyricText = note.lyric || 'la';
+      output += `  ${note.tick} = E "lyric ${lyricText}"\n`;
+    });
+    output += `}\n`;
     
     output += `[ExpertSingle]\n{\n`;
-    notesList
-      .filter(n => n.instrument === activeInstrument && n.difficulty === activeDifficulty)
-      .forEach(note => {
-        if (note.type === 'star_power') {
-          output += `  ${note.tick} = S 2 ${note.duration}\n`;
-          output += `  ${note.tick} = N ${note.lane} ${note.duration}\n`;
-        } else if (note.type === 'solo') {
-          output += `  ${note.tick} = S 1 ${note.duration}\n`;
-          output += `  ${note.tick} = N ${note.lane} ${note.duration}\n`;
-        } else {
-          output += `  ${note.tick} = N ${note.lane} ${note.duration}\n`;
-        }
-      });
+    if (activeInstrument !== 'vocals') {
+      notesList
+        .filter(n => n.instrument === activeInstrument && n.difficulty === activeDifficulty)
+        .forEach(note => {
+          if (note.type === 'star_power') {
+            output += `  ${note.tick} = S 2 ${note.duration}\n`;
+            output += `  ${note.tick} = N ${note.lane} ${note.duration}\n`;
+          } else if (note.type === 'solo') {
+            output += `  ${note.tick} = S 1 ${note.duration}\n`;
+            output += `  ${note.tick} = N ${note.lane} ${note.duration}\n`;
+          } else {
+            output += `  ${note.tick} = N ${note.lane} ${note.duration}\n`;
+          }
+        });
+    }
     output += `}\n`;
     
     return output;

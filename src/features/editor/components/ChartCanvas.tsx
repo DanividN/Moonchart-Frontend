@@ -27,6 +27,7 @@ export const ChartCanvas: React.FC = () => {
     updateNoteDuration,
     pushHistory,
     activeNoteType,
+    updateNoteLyric,
   } = useChartStore();
 
   const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
@@ -36,6 +37,8 @@ export const ChartCanvas: React.FC = () => {
   const [draggedPhraseId, setDraggedPhraseId] = useState<string | null>(null);
   const [draggedPhraseEdge, setDraggedPhraseEdge] = useState<'top' | 'bottom' | null>(null);
   const [isDraggingMinimap, setIsDraggingMinimap] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState<string>('');
 
   const [hoveredLane, setHoveredLane] = useState<number | null>(null);
   const [hoveredTick, setHoveredTick] = useState<number | null>(null);
@@ -130,18 +133,31 @@ export const ChartCanvas: React.FC = () => {
       ctx.stroke();
 
       // 3. Draw Lanes backgrounds
-      for (let i = 0; i < LANE_COUNT; i++) {
-        ctx.fillStyle = LANE_COLORS_DARK[i];
-        ctx.fillRect(startX + i * LANE_WIDTH, 0, LANE_WIDTH, height);
+      if (activeInstrument === 'vocals') {
+        const grad = ctx.createLinearGradient(startX, 0, startX + totalHighwayWidth, 0);
+        grad.addColorStop(0, 'rgba(6, 182, 212, 0.08)');
+        grad.addColorStop(1, 'rgba(99, 102, 241, 0.08)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(startX, 0, totalHighwayWidth, height);
         
-        // Lane separating lines
-        if (i > 0) {
-          ctx.strokeStyle = 'rgba(39, 39, 42, 0.4)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(startX + i * LANE_WIDTH, 0);
-          ctx.lineTo(startX + i * LANE_WIDTH, height);
-          ctx.stroke();
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.25)';
+        ctx.font = 'bold 12px "JetBrains Mono", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('🎤 PISTA DE LÍRICA VOCAL 🎤', startX + totalHighwayWidth / 2, 40);
+      } else {
+        for (let i = 0; i < LANE_COUNT; i++) {
+          ctx.fillStyle = LANE_COLORS_DARK[i];
+          ctx.fillRect(startX + i * LANE_WIDTH, 0, LANE_WIDTH, height);
+          
+          // Lane separating lines
+          if (i > 0) {
+            ctx.strokeStyle = 'rgba(39, 39, 42, 0.4)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(startX + i * LANE_WIDTH, 0);
+            ctx.lineTo(startX + i * LANE_WIDTH, height);
+            ctx.stroke();
+          }
         }
       }
 
@@ -270,7 +286,51 @@ export const ChartCanvas: React.FC = () => {
 
         const x = getCanvasX(note.lane, width) + LANE_WIDTH / 2;
 
-        // A. SPECIAL: Drum Kick Pedal rendered as a wide horizontal fuchsia bar
+        // A. SPECIAL: Vocals Lyric Pill
+        if (activeInstrument === 'vocals') {
+          const vocalX = startX + totalHighwayWidth / 2;
+          const lyricVal = note.lyric || 'la';
+          
+          ctx.shadowBlur = 12;
+          ctx.shadowColor = '#06b6d4'; // Cyan glow
+          
+          ctx.font = 'bold 11px "JetBrains Mono", sans-serif';
+          const textWidth = ctx.measureText(lyricVal).width;
+          const pillW = Math.max(55, textWidth + 24);
+          const pillH = 22;
+          
+          // Gradient fill
+          const grad = ctx.createLinearGradient(vocalX - pillW / 2, y, vocalX + pillW / 2, y);
+          grad.addColorStop(0, '#06b6d4');
+          grad.addColorStop(1, '#6366f1');
+          ctx.fillStyle = grad;
+          
+          ctx.beginPath();
+          ctx.roundRect(vocalX - pillW / 2, y - pillH / 2, pillW, pillH, 11);
+          ctx.fill();
+          
+          // White border
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.shadowBlur = 0;
+          ctx.stroke();
+          
+          // Render lyric text
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.fillText(lyricVal, vocalX, y + 4);
+          
+          // Quick hint
+          const isHovered = hoveredLane !== null && hoveredTick !== null && Math.abs(note.tick - hoveredTick) < ticksPerBeat / 8;
+          if (isHovered && editingNoteId !== note.id) {
+            ctx.fillStyle = 'rgba(244, 244, 245, 0.7)';
+            ctx.font = '8px Inter';
+            ctx.fillText('Doble clic para editar', vocalX, y - pillH / 2 - 4);
+          }
+          return;
+        }
+
+        // B. SPECIAL: Drum Kick Pedal rendered as a wide horizontal fuchsia bar
         if (note.type === 'kick_pedal' || (activeInstrument === 'drums' && note.lane === 0)) {
           ctx.shadowBlur = 15;
           ctx.shadowColor = '#d946ef'; // Fuchsia glow
@@ -769,6 +829,47 @@ export const ChartCanvas: React.FC = () => {
     setCurrentTick(Math.max(0, nextTick));
   };
 
+  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (activeInstrument !== 'vocals') return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+
+    // Find if double click was near any vocal lyric note
+    const clickedNote = notes.find(n => 
+      n.instrument === 'vocals' &&
+      n.difficulty === activeDifficulty &&
+      Math.abs(tickToY(n.tick, canvas.height) - y) < 16
+    );
+
+    if (clickedNote) {
+      setEditingNoteId(clickedNote.id);
+      setEditingText(clickedNote.lyric || 'la');
+    }
+  };
+
+  const getEditingInputStyle = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !editingNoteId) return {};
+
+    const note = notes.find(n => n.id === editingNoteId);
+    if (!note) return {};
+
+    const y = tickToY(note.tick, canvas.height);
+    const totalHighwayWidth = LANE_COUNT * LANE_WIDTH;
+    const startX = (canvas.width - totalHighwayWidth) / 2;
+    const vocalX = startX + totalHighwayWidth / 2;
+
+    return {
+      left: `${vocalX}px`,
+      top: `${y}px`,
+      transform: 'translate(-50%, -50%)',
+      width: '120px',
+    };
+  };
+
   return (
     <div className="relative w-full h-full flex-grow overflow-hidden bg-dark-bg">
       <canvas
@@ -778,9 +879,33 @@ export const ChartCanvas: React.FC = () => {
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
+        onDoubleClick={handleDoubleClick}
         className="block w-full h-full"
         style={{ cursor: (draggedPhraseId || hoveredPhraseId) ? 'ns-resize' : 'crosshair' }}
       />
+
+      {editingNoteId && (
+        <input
+          type="text"
+          value={editingText}
+          onChange={(e) => setEditingText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              updateNoteLyric(editingNoteId, editingText);
+              setEditingNoteId(null);
+            } else if (e.key === 'Escape') {
+              setEditingNoteId(null);
+            }
+          }}
+          onBlur={() => {
+            updateNoteLyric(editingNoteId, editingText);
+            setEditingNoteId(null);
+          }}
+          className="absolute bg-zinc-900 border-2 border-cyan-500 text-white font-mono text-xs rounded px-2 py-0.5 outline-none shadow-lg text-center z-20"
+          style={getEditingInputStyle()}
+          autoFocus
+        />
+      )}
     </div>
   );
 };

@@ -31,6 +31,17 @@ export const ChartCanvas: React.FC = () => {
   } = useChartStore();
 
   const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
+  const [draggedMoveNoteId, setDraggedMoveNoteId] = useState<string | null>(null);
+  const [hoveredNoteId, setHoveredNoteId] = useState<string | null>(null);
+
+  // Multi-Selection State Variables
+  const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
+  const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [isDraggingSelected, setIsDraggingSelected] = useState(false);
+  const [dragStartTick, setDragStartTick] = useState<number | null>(null);
+  const [dragStartLane, setDragStartLane] = useState<number | null>(null);
+  const [originalPositions, setOriginalPositions] = useState<Map<string, { tick: number; lane: number }>>(new Map());
 
   const [hoveredPhraseId, setHoveredPhraseId] = useState<string | null>(null);
   const [hoveredPhraseEdge, setHoveredPhraseEdge] = useState<'top' | 'bottom' | null>(null);
@@ -291,13 +302,42 @@ export const ChartCanvas: React.FC = () => {
           const vocalX = startX + totalHighwayWidth / 2;
           const lyricVal = note.lyric || 'la';
           
-          ctx.shadowBlur = 12;
-          ctx.shadowColor = '#06b6d4'; // Cyan glow
-          
           ctx.font = 'bold 11px "JetBrains Mono", sans-serif';
           const textWidth = ctx.measureText(lyricVal).width;
           const pillW = Math.max(55, textWidth + 24);
           const pillH = 22;
+
+          // Draw a beautiful glowing transparent extension capsule if duration > 0
+          if (note.duration > 0) {
+            ctx.save();
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#06b6d4';
+            
+            const tailGrad = ctx.createLinearGradient(vocalX, y, vocalX, endY);
+            tailGrad.addColorStop(0, 'rgba(6, 182, 212, 0.35)');
+            tailGrad.addColorStop(1, 'rgba(99, 102, 241, 0.05)');
+            ctx.fillStyle = tailGrad;
+
+            ctx.strokeStyle = 'rgba(6, 182, 212, 0.8)';
+            ctx.lineWidth = 2;
+            
+            ctx.beginPath();
+            ctx.roundRect(vocalX - pillW / 2 + 4, endY, pillW - 8, y - endY, 8);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+
+            // Draw a subtle connecting glow line in the center
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(vocalX, y - pillH / 2);
+            ctx.lineTo(vocalX, endY);
+            ctx.stroke();
+          }
+          
+          ctx.shadowBlur = 12;
+          ctx.shadowColor = '#06b6d4'; // Cyan glow
           
           // Gradient fill
           const grad = ctx.createLinearGradient(vocalX - pillW / 2, y, vocalX + pillW / 2, y);
@@ -325,8 +365,51 @@ export const ChartCanvas: React.FC = () => {
           if (isHovered && editingNoteId !== note.id) {
             ctx.fillStyle = 'rgba(244, 244, 245, 0.7)';
             ctx.font = '8px Inter';
-            ctx.fillText('Doble clic para editar', vocalX, y - pillH / 2 - 4);
+            ctx.fillText('Doble clic para editar / Arrastrar para alargar', vocalX, y - pillH / 2 - 4);
           }
+          return;
+        }
+
+        // Open Note (Lane 7) rendering as a wide horizontal purple bar
+        if (note.lane === 7) {
+          // Draw Sustain tail for Open Note (covering all 5 lanes visually)
+          if (note.duration > 0) {
+            ctx.save();
+            const grad = ctx.createLinearGradient(width / 2, y, width / 2, endY);
+            grad.addColorStop(0, 'rgba(168, 85, 247, 0.5)');
+            grad.addColorStop(1, 'rgba(168, 85, 247, 0.12)');
+
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.roundRect(startX + 4, endY, totalHighwayWidth - 8, y - endY, 4);
+            ctx.fill();
+
+            // Subtle glowing borders on both sides of the sustain
+            ctx.strokeStyle = 'rgba(168, 85, 247, 0.6)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(startX + 4, y);
+            ctx.lineTo(startX + 4, endY);
+            ctx.moveTo(startX + totalHighwayWidth - 4, y);
+            ctx.lineTo(startX + totalHighwayWidth - 4, endY);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = '#a855f7'; // Purple glow
+          
+          ctx.fillStyle = '#a855f7';
+          ctx.beginPath();
+          ctx.roundRect(startX + 4, y - 4, totalHighwayWidth - 8, 8, 3);
+          ctx.fill();
+          
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.roundRect(startX + 8, y - 2, totalHighwayWidth - 16, 4, 1);
+          ctx.stroke();
           return;
         }
 
@@ -367,6 +450,21 @@ export const ChartCanvas: React.FC = () => {
 
         // C. Draw Premium glossy note jewel
         const noteColor = note.type === 'star_power' ? '#eab308' : (note.type === 'solo' ? '#ef4444' : LANE_COLORS[note.lane]);
+        
+        // Highlight active, hovered or selected notes
+        const isHoveredOrDragged = note.id === hoveredNoteId || note.id === draggedMoveNoteId;
+        const isSelected = selectedNoteIds.has(note.id);
+        if (isSelected || isHoveredOrDragged) {
+          ctx.strokeStyle = isSelected ? '#3b82f6' : '#ffffff';
+          ctx.lineWidth = isSelected ? 4.5 : 3.5;
+          ctx.shadowBlur = isSelected ? 22 : 18;
+          ctx.shadowColor = isSelected ? '#3b82f6' : '#ffffff';
+          ctx.beginPath();
+          ctx.arc(x, y, 19, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.shadowBlur = 0; // reset
+        }
+
         ctx.shadowBlur = 12;
         ctx.shadowColor = noteColor;
         
@@ -427,6 +525,23 @@ export const ChartCanvas: React.FC = () => {
       ctx.lineTo(startX - 10, playheadY);
       ctx.lineTo(startX - 20, playheadY + 6);
       ctx.fill();
+
+      // 9b. Render Drag Selection Box
+      if (selectionBox) {
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.12)';
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 3]);
+        
+        const boxX = Math.min(selectionBox.startX, selectionBox.endX);
+        const boxY = Math.min(selectionBox.startY, selectionBox.endY);
+        const boxW = Math.abs(selectionBox.startX - selectionBox.endX);
+        const boxH = Math.abs(selectionBox.startY - selectionBox.endY);
+        
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+        ctx.strokeRect(boxX, boxY, boxW, boxH);
+        ctx.setLineDash([]);
+      }
 
       // FPS tracking or Time signature legend
       ctx.fillStyle = 'rgba(244, 244, 245, 0.5)';
@@ -529,7 +644,54 @@ export const ChartCanvas: React.FC = () => {
     return () => {
       cancelAnimationFrame(animationId);
     };
-  }, [notes, isPlaying, currentTick, zoomX, zoomY, quantization, hoveredLane, hoveredTick, selectedTool, activeInstrument, activeDifficulty, snapToGrid, aiSuggestions]);
+  }, [notes, isPlaying, currentTick, zoomX, zoomY, quantization, hoveredLane, hoveredTick, selectedTool, activeInstrument, activeDifficulty, snapToGrid, aiSuggestions, hoveredNoteId, draggedMoveNoteId, selectedNoteIds, selectionBox, isSelecting, isDraggingSelected]);
+
+  // Selection Key Shortcut Handlers
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Avoid hotkeys if typing in a text input (like lyric editing)
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+      
+      // Ctrl + A: Select all visible notes
+      if (e.ctrlKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        const visible = notes.filter(n => n.difficulty === activeDifficulty && n.instrument === activeInstrument);
+        setSelectedNoteIds(new Set(visible.map(n => n.id)));
+      }
+      
+      // Escape: Clear selection
+      if (e.key === 'Escape') {
+        setSelectedNoteIds(new Set());
+      }
+      
+      // Delete / Backspace: Remove all selected notes
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNoteIds.size > 0) {
+        pushHistory();
+        const idsToDelete = Array.from(selectedNoteIds);
+        useChartStore.setState((state) => ({
+          notes: state.notes.filter(n => !idsToDelete.includes(n.id))
+        }));
+        setSelectedNoteIds(new Set());
+      }
+
+      // Space / '0': Place Open Note (Lane 7) at the hovered tick or current playhead tick
+      if (e.key === '0' || e.key === ' ') {
+        e.preventDefault();
+        const targetTick = hoveredTick !== null ? hoveredTick : currentTick;
+        pushHistory();
+        addNote({
+          tick: targetTick,
+          lane: 7,
+          duration: 0,
+        });
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [notes, activeDifficulty, activeInstrument, selectedNoteIds, hoveredTick, currentTick]);
 
   // Handle Playback Simulation & Audio Sync
   useEffect(() => {
@@ -570,6 +732,43 @@ export const ChartCanvas: React.FC = () => {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    // 0a. Handle Selection box drag updates
+    if (isSelecting && selectionBox) {
+      setSelectionBox(box => box ? { ...box, endX: x, endY: y } : null);
+      
+      const boxX = Math.min(selectionBox.startX, x);
+      const boxW = Math.abs(selectionBox.startX - x);
+      const boxY = Math.min(selectionBox.startY, y);
+      const boxH = Math.abs(selectionBox.startY - y);
+
+      const totalHighwayWidth = LANE_COUNT * LANE_WIDTH;
+      const startX = (canvas.width - totalHighwayWidth) / 2;
+      const visible = notes.filter((n) => n.difficulty === activeDifficulty && n.instrument === activeInstrument);
+
+      const newlySelected = new Set<string>();
+      visible.forEach(note => {
+        const noteY = tickToY(note.tick, canvas.height);
+        const noteX = note.instrument === 'vocals'
+          ? (startX + totalHighwayWidth / 2)
+          : (getCanvasX(note.lane, canvas.width) + LANE_WIDTH / 2);
+        
+        if (noteX >= boxX && noteX <= boxX + boxW && noteY >= boxY && noteY <= boxY + boxH) {
+          newlySelected.add(note.id);
+        }
+      });
+      
+      if (e.shiftKey) {
+        setSelectedNoteIds(prev => {
+          const combined = new Set(prev);
+          newlySelected.forEach(id => combined.add(id));
+          return combined;
+        });
+      } else {
+        setSelectedNoteIds(newlySelected);
+      }
+      return;
+    }
+
     // 0. Handle Minimap dragging
     if (isDraggingMinimap && y !== null) {
       const duration = audioEngine.getDuration() || 180;
@@ -589,6 +788,28 @@ export const ChartCanvas: React.FC = () => {
 
     setHoveredLane(lane);
     setHoveredTick(tick);
+
+    // 0b. Handle Dragging Multiple Selected Notes
+    if (isDraggingSelected && dragStartTick !== null && dragStartLane !== null && tick !== null) {
+      const tickDiff = tick - dragStartTick;
+      const laneDiff = lane !== null ? (lane - dragStartLane) : 0;
+
+      useChartStore.setState((state) => {
+        const updatedNotes = state.notes.map(n => {
+          if (selectedNoteIds.has(n.id)) {
+            const orig = originalPositions.get(n.id);
+            if (orig) {
+              const newTick = Math.max(0, orig.tick + tickDiff);
+              const newLane = activeInstrument === 'vocals' ? 0 : Math.min(LANE_COUNT - 1, Math.max(0, orig.lane + laneDiff));
+              return { ...n, tick: newTick, lane: newLane };
+            }
+          }
+          return n;
+        });
+        return { notes: updatedNotes };
+      });
+      return;
+    }
 
     // 1. Detect Hover over Star Power / Solo Phrase boundaries
     let foundHoveredPhrase: string | null = null;
@@ -620,7 +841,58 @@ export const ChartCanvas: React.FC = () => {
     setHoveredPhraseId(foundHoveredPhrase);
     setHoveredPhraseEdge(foundHoveredEdge);
 
-    // 2. Handle Phrase edge dragging with real-time note transformation
+    // 2. Detect Hover over standard Note Jewels for dragging
+    const totalHighwayWidth = LANE_COUNT * LANE_WIDTH;
+    const startX = (canvas.width - totalHighwayWidth) / 2;
+    const visibleNotes = notes.filter((n) => n.difficulty === activeDifficulty && n.instrument === activeInstrument);
+    
+    const foundHoveredNote = visibleNotes.find((note) => {
+      const noteY = tickToY(note.tick, canvas.height);
+      if (note.lane === 7) {
+        const withinHighwayX = x >= startX && x <= startX + totalHighwayWidth;
+        const withinY = Math.abs(y - noteY) < 12;
+        return withinHighwayX && withinY;
+      }
+      const noteX = note.instrument === 'vocals'
+        ? (startX + totalHighwayWidth / 2)
+        : (getCanvasX(note.lane, canvas.width) + LANE_WIDTH / 2);
+      
+      const dist = Math.hypot(x - noteX, y - noteY);
+      return dist < 18;
+    });
+
+    setHoveredNoteId(foundHoveredNote ? foundHoveredNote.id : null);
+
+    // 3. Handle dragging/moving notes themselves on the grid
+    if (draggedMoveNoteId && tick !== null) {
+      const targetLane = activeInstrument === 'vocals' ? 0 : (lane !== null ? lane : 0);
+      
+      useChartStore.setState((state) => {
+        const note = state.notes.find(n => n.id === draggedMoveNoteId);
+        if (!note) return {};
+
+        // Prevent placing duplicate notes on the exact same tick and lane
+        const hasDuplicate = state.notes.some(n => 
+          n.id !== draggedMoveNoteId &&
+          n.tick === tick &&
+          n.lane === targetLane &&
+          n.difficulty === activeDifficulty &&
+          n.instrument === activeInstrument
+        );
+
+        if (hasDuplicate) return {};
+
+        return {
+          notes: state.notes.map(n => 
+            n.id === draggedMoveNoteId 
+              ? { ...n, tick, lane: targetLane } 
+              : n
+          )
+        };
+      });
+    }
+
+    // 4. Handle Phrase edge dragging with real-time note transformation
     if (draggedPhraseId && draggedPhraseEdge && tick !== null) {
       const phrase = notes.find(n => n.id === draggedPhraseId);
       if (phrase) {
@@ -677,7 +949,7 @@ export const ChartCanvas: React.FC = () => {
       }
     }
 
-    // 3. Dynamic drag-to-sustain for regular notes
+    // 5. Dynamic drag-to-sustain for regular notes
     if (draggedNoteId && tick !== null) {
       const draggedNote = notes.find(n => n.id === draggedNoteId);
       if (draggedNote) {
@@ -693,6 +965,8 @@ export const ChartCanvas: React.FC = () => {
     setDraggedNoteId(null);
     setDraggedPhraseId(null);
     setDraggedPhraseEdge(null);
+    setDraggedMoveNoteId(null);
+    setHoveredNoteId(null);
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -720,9 +994,78 @@ export const ChartCanvas: React.FC = () => {
       return;
     }
 
+    // B. Click on Note Jewel: Drag/move single or multiple selected notes! (Works anywhere on screen)
+    const totalHighwayWidth = LANE_COUNT * LANE_WIDTH;
+    const startX = (canvas.width - totalHighwayWidth) / 2;
+    const visibleNotes = notes.filter((n) => n.difficulty === activeDifficulty && n.instrument === activeInstrument);
+    
+    const clickedNoteJewel = visibleNotes.find((note) => {
+      const noteY = tickToY(note.tick, canvas.height);
+      if (note.lane === 7) {
+        const withinHighwayX = x >= startX && x <= startX + totalHighwayWidth;
+        const withinY = Math.abs(y - noteY) < 14;
+        return withinHighwayX && withinY;
+      }
+      const noteX = note.instrument === 'vocals'
+        ? (startX + totalHighwayWidth / 2)
+        : (getCanvasX(note.lane, canvas.width) + LANE_WIDTH / 2);
+      
+      const dist = Math.hypot(x - noteX, y - noteY);
+      return dist < 22; // 22px grab tolerance
+    });
+
+    if (clickedNoteJewel) {
+      pushHistory();
+      
+      const isCurrentlySelected = selectedNoteIds.has(clickedNoteJewel.id);
+      
+      let nextSelection = new Set(selectedNoteIds);
+      if (!isCurrentlySelected) {
+        if (!e.shiftKey) {
+          nextSelection = new Set();
+        }
+        nextSelection.add(clickedNoteJewel.id);
+        setSelectedNoteIds(nextSelection);
+      } else if (e.shiftKey) {
+        nextSelection.delete(clickedNoteJewel.id);
+        setSelectedNoteIds(nextSelection);
+        return;
+      }
+
+      // Start multi-selection drag
+      setIsDraggingSelected(true);
+      setDragStartTick(clickedNoteJewel.tick);
+      setDragStartLane(clickedNoteJewel.lane);
+      
+      const positions = new Map<string, { tick: number; lane: number }>();
+      notes.forEach(n => {
+        if (nextSelection.has(n.id)) {
+          positions.set(n.id, { tick: n.tick, lane: n.lane });
+        }
+      });
+      setOriginalPositions(positions);
+      return;
+    }
+
+    // C. Empty Space Click in Selection Mode: Draw Drag Selection Box (Works anywhere including black area!)
+    if (selectedTool === 'select') {
+      if (!e.shiftKey) {
+        setSelectedNoteIds(new Set());
+      }
+      setIsSelecting(true);
+      setSelectionBox({ startX: x, startY: y, endX: x, endY: y });
+      return;
+    }
+
+    // Default Pencil & Eraser Behaviors (Pencil places notes, Eraser deletes notes)
+    if (!e.shiftKey) {
+      setSelectedNoteIds(new Set()); // Deselect on action
+    }
+
+    // D. Pencil and Eraser actions require the click to be inside a valid lane on the track
     if (hoveredLane === null || hoveredTick === null) return;
 
-    // A. First Priority: If hovering a phrase edge, begin resizing
+    // First Priority inside track: If hovering a phrase edge, begin resizing
     if (hoveredPhraseId && hoveredPhraseEdge) {
       pushHistory();
       setDraggedPhraseId(hoveredPhraseId);
@@ -731,11 +1074,13 @@ export const ChartCanvas: React.FC = () => {
     }
 
     if (selectedTool === 'pencil') {
-      // B. Check if they clicked on/near an existing note to drag its sustain length!
+      // Check if they clicked on/near an existing note's sustain body to drag its sustain length! (Includes Open Notes)
       const clickedNote = notes.find(
         (n) =>
-          n.lane === hoveredLane &&
-          Math.abs(n.tick - hoveredTick) < ticksPerBeat / 4 &&
+          (activeInstrument === 'vocals' || n.lane === 7 || n.lane === hoveredLane) &&
+          (n.lane !== 7 || activeNoteType === 'open' || Math.abs(n.tick - hoveredTick) < ticksPerBeat / 4) &&
+          (Math.abs(n.tick - hoveredTick) < ticksPerBeat / 4 ||
+           (n.duration > 0 && hoveredTick >= n.tick && hoveredTick <= n.tick + n.duration + ticksPerBeat / 4)) &&
           n.difficulty === activeDifficulty &&
           n.instrument === activeInstrument
       );
@@ -744,13 +1089,28 @@ export const ChartCanvas: React.FC = () => {
         pushHistory();
         setDraggedNoteId(clickedNote.id);
       } else {
-        // Place new note (sustain duration is initially 48 if activeNoteType is star_power/solo to allow resizing)
+        // Place new note
         const isPhrase = activeNoteType === 'star_power' || activeNoteType === 'solo';
-        addNote({
+        let targetLane = activeNoteType === 'open' ? 7 : hoveredLane;
+
+        if (activeInstrument === 'drums') {
+          if (activeNoteType === 'kick_pedal') {
+            targetLane = 0; // Strictly force Lane 0 (Bombo/Kick) regardless of click X coordinate
+          } else if (targetLane === 0) {
+            targetLane = 1; // Map leftmost lane to Red Snare if standard Pads is active
+          }
+        }
+
+        const newNote = addNote({
           tick: hoveredTick,
-          lane: hoveredLane,
+          lane: targetLane,
           duration: isPhrase ? 192 : 0, // default 1 beat duration for newly placed phrases
         });
+
+        // Enable immediate drag-to-sustain on newly placed notes
+        if (newNote && !isPhrase) {
+          setDraggedNoteId(newNote.id);
+        }
 
         // If placing a new star power phrase, immediately transform any underlying notes!
         if (activeNoteType === 'star_power') {
@@ -779,7 +1139,7 @@ export const ChartCanvas: React.FC = () => {
       // Find note under cursor
       const noteToDelete = notes.find(
         (n) =>
-          n.lane === hoveredLane &&
+          (n.lane === 7 || n.lane === hoveredLane) &&
           Math.abs(n.tick - hoveredTick) < ticksPerBeat / 8 &&
           n.difficulty === activeDifficulty &&
           n.instrument === activeInstrument
@@ -815,6 +1175,15 @@ export const ChartCanvas: React.FC = () => {
     setDraggedPhraseId(null);
     setDraggedPhraseEdge(null);
     setIsDraggingMinimap(false);
+    setDraggedMoveNoteId(null);
+
+    // Multi-Selection dragging / box selection cleanups
+    setIsSelecting(false);
+    setSelectionBox(null);
+    setIsDraggingSelected(false);
+    setDragStartTick(null);
+    setDragStartLane(null);
+    setOriginalPositions(new Map());
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -881,7 +1250,17 @@ export const ChartCanvas: React.FC = () => {
         onWheel={handleWheel}
         onDoubleClick={handleDoubleClick}
         className="block w-full h-full"
-        style={{ cursor: (draggedPhraseId || hoveredPhraseId) ? 'ns-resize' : 'crosshair' }}
+        style={{ 
+          cursor: draggedMoveNoteId 
+            ? 'grabbing' 
+            : hoveredNoteId 
+              ? 'grab' 
+              : (draggedPhraseId || hoveredPhraseId) 
+                ? 'ns-resize' 
+                : selectedTool === 'eraser' 
+                  ? 'pointer' 
+                  : 'crosshair' 
+        }}
       />
 
       {editingNoteId && (

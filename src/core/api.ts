@@ -34,7 +34,7 @@ export class APIClient {
       const registerRes = await fetch(`${BASE_URL}/users/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, full_name: 'Antigravity Charter' }),
+        body: JSON.stringify({ email, password, full_name: 'Mooncharts Charter' }),
       });
 
       if (registerRes.ok) {

@@ -8,8 +8,10 @@ export interface Note {
   duration: number;
   difficulty: 'easy' | 'medium' | 'hard' | 'expert';
   instrument: 'guitar' | 'bass' | 'drums' | 'vocals';
-  type?: 'strum' | 'hopo' | 'tap' | 'kick_pedal' | 'star_power' | 'solo';
+  type?: 'strum' | 'hopo' | 'tap' | 'open' | 'kick_pedal' | 'star_power' | 'solo';
   lyric?: string;
+  phraseStart?: boolean;
+  phraseEnd?: boolean;
 }
 
 export interface AISuggestion {
@@ -49,8 +51,12 @@ interface ChartState {
   activeInstrument: 'guitar' | 'bass' | 'drums' | 'vocals';
   activeDifficulty: 'easy' | 'medium' | 'hard' | 'expert';
   snapToGrid: boolean;
-  activeNoteType: 'strum' | 'hopo' | 'tap' | 'star_power' | 'solo';
+  activeNoteType: 'strum' | 'hopo' | 'tap' | 'open' | 'kick_pedal' | 'star_power' | 'solo';
   activeSustainDuration: number;
+  
+  // Custom Assets
+  coverFile: File | null;
+  videoFile: File | null;
   
 
   // --- Audio Parameters ---
@@ -101,18 +107,21 @@ interface ChartState {
   setStemVolume: (stem: 'song' | 'guitar' | 'bass' | 'drums' | 'vocals' | 'backing', vol: number) => void;
   setSongName: (name: string) => void;
   setAudioFile: (file: File | null) => void;
-  setActiveNoteType: (type: 'strum' | 'hopo' | 'tap' | 'star_power' | 'solo') => void;
+  setActiveNoteType: (type: 'strum' | 'hopo' | 'tap' | 'open' | 'kick_pedal' | 'star_power' | 'solo') => void;
   setActiveSustainDuration: (dur: number) => void;
   updateNoteDuration: (id: string, duration: number) => void;
   updateMetadata: (meta: Partial<ChartState['metadata']>) => void;
   setLyricsText: (text: string) => void;
   updateNoteLyric: (id: string, lyric: string) => void;
   
+  setCoverFile: (file: File | null) => void;
+  setVideoFile: (file: File | null) => void;
+  
   
   
   
   // Note mutations with History
-  addNote: (note: Omit<Note, 'id' | 'difficulty' | 'instrument'>) => void;
+  addNote: (note: Omit<Note, 'id' | 'difficulty' | 'instrument'>) => Note;
   removeNote: (id: string) => void;
   clearNotes: () => void;
   loadNotes: (notes: Note[]) => void;
@@ -131,14 +140,7 @@ interface ChartState {
 }
 
 export const useChartStore = create<ChartState>((set, get) => ({
-  notes: [
-    // Initial mock notes for visual presentation
-    { id: '1', tick: 0, lane: 0, duration: 0, difficulty: 'expert', instrument: 'guitar' },
-    { id: '2', tick: 192, lane: 1, duration: 96, difficulty: 'expert', instrument: 'guitar' },
-    { id: '3', tick: 384, lane: 2, duration: 0, difficulty: 'expert', instrument: 'guitar' },
-    { id: '4', tick: 576, lane: 3, duration: 0, difficulty: 'expert', instrument: 'guitar' },
-    { id: '5', tick: 768, lane: 4, duration: 192, difficulty: 'expert', instrument: 'guitar' },
-  ],
+  notes: [],
   bpm: 120,
   ticksPerBeat: 192,
   songName: 'demo_song.wav',
@@ -169,6 +171,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
   snapToGrid: true,
   activeNoteType: 'strum',
   activeSustainDuration: 0, // Default to single hit (0 ticks)
+  coverFile: null,
+  videoFile: null,
   
 
   playbackSpeed: 1.0,
@@ -182,15 +186,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
   processingJobId: null,
   processingStatus: 'idle',
 
-  aiSuggestions: [
-    // Initial mock AI recommendations
-    { id: 'ai-1', tick: 960, lane: 0, confidence: 0.92, reason: 'Audio onset' },
-    { id: 'ai-2', tick: 1152, lane: 2, confidence: 0.85, reason: 'Guitar pitch detected' },
-    { id: 'ai-3', tick: 1344, lane: 4, confidence: 0.78, reason: 'Drum transient sync' }
-  ],
-  validationWarnings: [
-    { id: 'w-1', tick: 768, message: 'Posible overcharting: notas repetidas a alta velocidad en Fácil.', severity: 'warning' }
-  ],
+  aiSuggestions: [],
+  validationWarnings: [],
   lyricsText: '',
 
   historyPast: [],
@@ -220,6 +217,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
   updateMetadata: (meta) => set((state) => ({ metadata: { ...state.metadata, ...meta } })),
   setActiveNoteType: (type) => set({ activeNoteType: type }),
   setActiveSustainDuration: (dur) => set({ activeSustainDuration: dur }),
+  setCoverFile: (file) => set({ coverFile: file }),
+  setVideoFile: (file) => set({ videoFile: file }),
   updateNoteDuration: (id, duration) => set((state) => ({
     notes: state.notes.map(n => {
       if (n.id === id) {
@@ -289,12 +288,22 @@ export const useChartStore = create<ChartState>((set, get) => ({
       type: noteType
     };
 
-    // Filter duplicates on same tick & lane
-    const filtered = get().notes.filter(n => 
-      !(n.tick === newNote.tick && n.lane === newNote.lane && n.difficulty === newNote.difficulty && n.instrument === newNote.instrument)
-    );
+    // Filter duplicates on same tick & lane. Also enforce mutual exclusion between Open Notes (lane 7) and standard/fretted notes on the exact same tick!
+    const filtered = get().notes.filter(n => {
+      if (n.tick !== newNote.tick || n.difficulty !== newNote.difficulty || n.instrument !== newNote.instrument) {
+        return true;
+      }
+      if (newNote.lane === 7) {
+        return false;
+      }
+      if (n.lane === 7) {
+        return false;
+      }
+      return n.lane !== newNote.lane;
+    });
 
     set({ notes: [...filtered, newNote] });
+    return newNote;
   },
 
   removeNote: (id) => {

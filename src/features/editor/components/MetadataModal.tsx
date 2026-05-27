@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useChartStore } from '../../../store/useChartStore';
-import { X, Music, User, Disc, Calendar, Layers, Shield, Award } from 'lucide-react';
+import { X, Music, User, Disc, Calendar, Layers, Shield, Award, Image as ImageIcon, Video, Film } from 'lucide-react';
 
 interface MetadataModalProps {
   isOpen: boolean;
@@ -21,7 +21,26 @@ interface MetadataModalProps {
 }
 
 export const MetadataModal: React.FC<MetadataModalProps> = ({ isOpen, onClose, onConfirmExport }) => {
-  const { metadata, updateMetadata } = useChartStore();
+  const { metadata, updateMetadata, coverFile, setCoverFile, videoFile, setVideoFile } = useChartStore();
+
+  const [coverPreview, setCoverPreview] = useState<string | null>(
+    coverFile ? URL.createObjectURL(coverFile) : null
+  );
+
+  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCoverFile(file);
+      setCoverPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setVideoFile(file);
+    }
+  };
 
   // Local state for form validation and instant updates
   const [name, setName] = useState(metadata.name);
@@ -209,6 +228,86 @@ export const MetadataModal: React.FC<MetadataModalProps> = ({ isOpen, onClose, o
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* Section 3: Portada y Video */}
+          <div className="space-y-4 pt-2">
+            <h3 className="text-xs font-bold text-purple-400 uppercase tracking-wider border-b border-dark-border/40 pb-1 flex items-center gap-1.5 font-mono">
+              <ImageIcon size={13} /> Portada y Video de Acompañamiento
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Cover Art Box */}
+              <div className="bg-zinc-900/30 p-4 rounded-xl border border-dark-border/50 flex flex-col items-center gap-3">
+                <span className="text-[10px] font-bold text-dark-muted uppercase self-start">Carátula del Álbum (album.png)</span>
+                
+                <div className="relative w-36 h-36 rounded-lg bg-zinc-900 border border-dark-border flex items-center justify-center overflow-hidden group shadow-inner">
+                  {coverPreview ? (
+                    <>
+                      <img src={coverPreview} alt="Cover Preview" className="w-full h-full object-cover animate-in zoom-in-95 duration-200" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <span className="text-[10px] font-bold text-white uppercase font-mono">Cambiar Portada</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 text-dark-muted">
+                      <ImageIcon size={28} className="text-zinc-600" />
+                      <span className="text-[9px] font-mono text-center px-2">Ninguna Portada</span>
+                    </div>
+                  )}
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handleCoverChange}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                  />
+                </div>
+                <span className="text-[9px] text-dark-muted text-center leading-relaxed">
+                  Cualquier resolución se redimensionará automáticamente a <strong className="text-purple-400">512x512 PNG</strong> para un rendimiento óptimo en Clone Hero.
+                </span>
+              </div>
+
+              {/* Video Box */}
+              <div className="bg-zinc-900/30 p-4 rounded-xl border border-dark-border/50 flex flex-col justify-between gap-4">
+                <div className="space-y-3">
+                  <span className="text-[10px] font-bold text-dark-muted uppercase block">Video de Fondo (video.mp4)</span>
+                  
+                  {videoFile ? (
+                    <div className="bg-zinc-950 p-3 rounded-lg border border-purple-500/30 flex items-center gap-3 animate-in fade-in duration-200">
+                      <Film className="text-purple-400 shrink-0" size={24} />
+                      <div className="flex-grow min-w-0">
+                        <p className="text-xs font-mono text-zinc-200 truncate">{videoFile.name}</p>
+                        <p className="text-[10px] text-dark-muted font-mono font-bold">{(videoFile.size / (1024 * 1024)).toFixed(2)} MB</p>
+                      </div>
+                      <button 
+                        onClick={() => setVideoFile(null)}
+                        className="text-red-500 hover:text-red-400 text-[10px] font-bold uppercase transition-colors shrink-0 bg-red-500/10 hover:bg-red-500/20 px-2 py-1 rounded cursor-pointer"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="relative border border-dashed border-dark-border hover:border-purple-500/50 rounded-lg p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors group">
+                      <Video size={28} className="text-dark-muted group-hover:text-purple-400 transition-colors" />
+                      <span className="text-[10px] font-bold text-zinc-400 group-hover:text-zinc-200 font-mono">Seleccionar Video .mp4</span>
+                      <span className="text-[8px] text-dark-muted">Arrastra o haz clic para subir</span>
+                      <input 
+                        type="file" 
+                        accept="video/mp4,video/*" 
+                        onChange={handleVideoChange}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                      />
+                    </div>
+                  )}
+                </div>
+                
+                <span className="text-[9px] text-dark-muted leading-relaxed">
+                  El video se empaquetará directamente en la carpeta del chart como <strong className="text-purple-400 font-bold">video.mp4</strong>. 
+                  <br />
+                  <span className="text-amber-500 font-bold">⚠️ Nota:</span> Archivos grandes incrementarán el tamaño de descarga del archivo .zip.
+                </span>
+              </div>
             </div>
           </div>
         </div>

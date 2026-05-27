@@ -8,6 +8,7 @@ import { useChartStore } from './store/useChartStore';
 import { Disc, Music4, Cpu, Cloud, Upload, Download } from 'lucide-react';
 import { MetadataModal } from './features/editor/components/MetadataModal';
 import { APIClient } from './core/api';
+import Swal from 'sweetalert2';
 
 const App: React.FC = () => {
   const { 
@@ -19,7 +20,9 @@ const App: React.FC = () => {
     audioFile, 
     metadata, 
     processingJobId, 
-    setAudioFile 
+    setAudioFile,
+    coverFile,
+    videoFile
   } = useChartStore();
   
   const [isMetadataOpen, setIsMetadataOpen] = useState(false);
@@ -34,35 +37,111 @@ const App: React.FC = () => {
   };
 
   const exportToChartFile = (notesList: any[], beatsPerMin: number, activeMeta: typeof metadata, resolution: number = 192) => {
-    let output = `[Song]\n{\n  Name = "${activeMeta.name}"\n  Artist = "${activeMeta.artist}"\n  Charter = "${activeMeta.charter}"\n  Album = "${activeMeta.album}"\n  Year = ", ${activeMeta.year}"\n  Genre = "${activeMeta.genre}"\n  Offset = 0\n  Resolution = ${resolution}\n  Player2 = easy\n  Difficulty = 0\n  PreviewStart = 0\n  PreviewLength = 0\n  SyncTrack = 0\n}\n`;
+    let output = `[Song]\n{\n  Name = "${activeMeta.name}"\n  Artist = "${activeMeta.artist}"\n  Charter = "${activeMeta.charter}"\n  Album = "${activeMeta.album}"\n  Year = "${activeMeta.year}"\n  Genre = "${activeMeta.genre}"\n  Offset = 0\n  Resolution = ${resolution}\n  Player2 = bass\n  Difficulty = 0\n  PreviewStart = 0\n  PreviewLength = 0\n  SyncTrack = 0\n}\n`;
     output += `[SyncTrack]\n{\n  0 = TS 4\n  0 = B ${beatsPerMin * 1000}\n}\n`;
 
-    // Serialize Vocals inside Events track as Clone Hero standard lyrics
-    const vocalNotes = notesList.filter(n => n.instrument === 'vocals' && n.difficulty === activeDifficulty);
+    // 1. Serialize Vocals inside Events track as Clone Hero standard lyrics
+    let vocalNotes = notesList.filter(n => n.instrument === 'vocals' && n.difficulty === activeDifficulty);
+    if (vocalNotes.length === 0) {
+      const diffOrder: ('expert' | 'hard' | 'medium' | 'easy')[] = ['expert', 'hard', 'medium', 'easy'];
+      for (const d of diffOrder) {
+        const found = notesList.filter(n => n.instrument === 'vocals' && n.difficulty === d);
+        if (found.length > 0) {
+          vocalNotes = found;
+          break;
+        }
+      }
+    }
+
+    // Sort lyrics by tick so they write chronologically
+    vocalNotes = [...vocalNotes].sort((a, b) => a.tick - b.tick);
+
     output += `[Events]\n{\n`;
-    vocalNotes.forEach(note => {
-      const lyricText = note.lyric || 'la';
-      output += `  ${note.tick} = E "lyric ${lyricText}"\n`;
-    });
-    output += `}\n`;
-    
-    output += `[ExpertSingle]\n{\n`;
-    if (activeInstrument !== 'vocals') {
-      notesList
-        .filter(n => n.instrument === activeInstrument && n.difficulty === activeDifficulty)
-        .forEach(note => {
-          if (note.type === 'star_power') {
-            output += `  ${note.tick} = S 2 ${note.duration}\n`;
-            output += `  ${note.tick} = N ${note.lane} ${note.duration}\n`;
-          } else if (note.type === 'solo') {
-            output += `  ${note.tick} = S 1 ${note.duration}\n`;
-            output += `  ${note.tick} = N ${note.lane} ${note.duration}\n`;
-          } else {
-            output += `  ${note.tick} = N ${note.lane} ${note.duration}\n`;
+    if (vocalNotes.length > 0) {
+      let isPhraseActive = false;
+      let wordsInPhrase = 0;
+      
+      for (let i = 0; i < vocalNotes.length; i++) {
+        const note = vocalNotes[i];
+        const prevNote = i > 0 ? vocalNotes[i - 1] : null;
+        
+        const shouldStartNewPhrase = 
+          note.phraseStart || 
+          (!isPhraseActive) || 
+          (note.phraseStart === undefined && ( (prevNote && (note.tick - prevNote.tick > 768)) || wordsInPhrase >= 6 ));
+        
+        if (shouldStartNewPhrase) {
+          if (isPhraseActive && prevNote) {
+            const endTick = prevNote.tick + (prevNote.duration || 96);
+            output += `  ${endTick} = E "phrase_end"\n`;
           }
-        });
+          output += `  ${note.tick} = E "phrase_start"\n`;
+          isPhraseActive = true;
+          wordsInPhrase = 0;
+        }
+        
+        const lyricText = note.lyric || 'la';
+        output += `  ${note.tick} = E "lyric ${lyricText}"\n`;
+        wordsInPhrase++;
+        
+        if (note.phraseEnd || (note.phraseEnd === undefined && i === vocalNotes.length - 1)) {
+          const endTick = note.tick + (note.duration || 96);
+          output += `  ${endTick} = E "phrase_end"\n`;
+          isPhraseActive = false;
+        }
+      }
+      
+      if (isPhraseActive) {
+        const lastNote = vocalNotes[vocalNotes.length - 1];
+        const endTick = lastNote.tick + (lastNote.duration || 96);
+        output += `  ${endTick} = E "phrase_end"\n`;
+      }
     }
     output += `}\n`;
+    
+    // 2. Define the difficulty levels and instrument mappings
+    const difficulties = [
+      { key: 'easy', label: 'Easy' },
+      { key: 'medium', label: 'Medium' },
+      { key: 'hard', label: 'Hard' },
+      { key: 'expert', label: 'Expert' }
+    ] as const;
+
+    const instrumentTrackMap = {
+      guitar: 'Single',
+      bass: 'DoubleBass',
+      drums: 'Drums'
+    } as const;
+
+    // Loop over each combination of difficulty and instrument to serialize
+    difficulties.forEach(({ key: diffKey, label: diffLabel }) => {
+      Object.entries(instrumentTrackMap).forEach(([instKey, trackSuffix]) => {
+        const trackNotes = notesList
+          .filter(n => n.instrument === instKey && n.difficulty === diffKey)
+          .sort((a, b) => a.tick - b.tick);
+        
+        if (trackNotes.length > 0) {
+          output += `[${diffLabel}${trackSuffix}]\n{\n`;
+          trackNotes.forEach(note => {
+            if (note.type === 'star_power') {
+              output += `  ${note.tick} = S 2 ${note.duration}\n`;
+              output += `  ${note.tick} = N ${note.lane} ${note.duration}\n`;
+            } else if (note.type === 'solo') {
+              output += `  ${note.tick} = S 1 ${note.duration}\n`;
+              output += `  ${note.tick} = N ${note.lane} ${note.duration}\n`;
+            } else {
+              output += `  ${note.tick} = N ${note.lane} ${note.duration}\n`;
+              if (note.type === 'hopo') {
+                output += `  ${note.tick} = N 5 0\n`;
+              } else if (note.type === 'tap') {
+                output += `  ${note.tick} = N 6 0\n`;
+              }
+            }
+          });
+          output += `}\n`;
+        }
+      });
+    });
     
     return output;
   };
@@ -78,6 +157,9 @@ const App: React.FC = () => {
       zip.file("notes.chart", chartContent);
 
       // 2. Generate song.ini metadata file using customized fields
+      const maxTick = notes.length > 0 ? Math.max(...notes.map(n => n.tick)) : 1000;
+      const songLengthMs = Math.floor((maxTick / 192) * (60 / bpm) * 1000);
+
       const songIniContent = `[song]
 name = ${activeMeta.name}
 artist = ${activeMeta.artist}
@@ -85,16 +167,66 @@ charter = ${activeMeta.charter}
 album = ${activeMeta.album}
 year = ${activeMeta.year}
 genre = ${activeMeta.genre}
-song_length = ${Math.floor((notes.length > 0 ? Math.max(...notes.map(n => n.tick)) : 1000) * (60 / bpm) * 1000)}
+song_length = ${songLengthMs}
 diff_guitar = ${activeMeta.diff_guitar}
 diff_bass = ${activeMeta.diff_bass}
 diff_drums = ${activeMeta.diff_drums}
 diff_vocals = ${activeMeta.diff_vocals}
 diff_band = ${activeMeta.diff_band}
 preview_start_time = 0
-loading_phrase = Created in Antigravity Mooncharts Pro!
+loading_phrase = Created in Mooncharts Pro!
 `;
       zip.file("song.ini", songIniContent);
+
+      // 2b. Package Album Cover Art (album.png) with client-side canvas resizing to 512x512
+      if (coverFile) {
+        try {
+          const resizePromise = () => new Promise<Blob>((resolve) => {
+            const img = new Image();
+            img.src = URL.createObjectURL(coverFile);
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = 512;
+              canvas.height = 512;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                // Center-crop and scale to 512x512
+                const size = Math.min(img.width, img.height);
+                const offsetX = (img.width - size) / 2;
+                const offsetY = (img.height - size) / 2;
+                ctx.drawImage(img, offsetX, offsetY, size, size, 0, 0, 512, 512);
+                canvas.toBlob((blob) => {
+                  resolve(blob || coverFile);
+                }, 'image/png');
+              } else {
+                resolve(coverFile);
+              }
+            };
+            img.onerror = () => resolve(coverFile);
+          });
+          
+          const coverBlob = await resizePromise();
+          const coverData = await coverBlob.arrayBuffer();
+          zip.file("album.png", coverData);
+          console.log("Successfully optimized and packed album.png!");
+        } catch (err) {
+          console.error("Failed to compress/resize album cover. Packing original.", err);
+          const coverData = await coverFile.arrayBuffer();
+          zip.file("album.png", coverData);
+        }
+      }
+
+      // 2c. Package Background Video (video.mp4) directly
+      if (videoFile) {
+        try {
+          const videoData = await videoFile.arrayBuffer();
+          const ext = videoFile.name.split('.').pop() || 'mp4';
+          zip.file(`video.${ext}`, videoData);
+          console.log(`Successfully packed video.${ext}!`);
+        } catch (err) {
+          console.error("Failed to pack video file", err);
+        }
+      }
 
       // 3. Dynamic audio embed: Fetch high-fidelity song.ogg from backend if processed, else fall back to local file
       let audioData: ArrayBuffer | null = null;
@@ -138,7 +270,14 @@ loading_phrase = Created in Antigravity Mooncharts Pro!
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Failed to generate Clone Hero song folder zip", err);
-      alert("Error al generar la carpeta del chart. Asegúrate de tener cargada una canción.");
+      Swal.fire({
+        title: 'Error de Exportación',
+        text: 'Error al generar la carpeta del chart. Asegúrate de tener cargada una canción.',
+        icon: 'error',
+        background: '#09090b',
+        color: '#f4f4f5',
+        confirmButtonColor: '#8b5cf6',
+      });
     }
   };
 
@@ -152,7 +291,7 @@ loading_phrase = Created in Antigravity Mooncharts Pro!
             <Disc size={15} className="animate-spin" style={{ animationDuration: '4s' }} />
           </div>
           <div className="flex flex-col">
-            <span className="text-xs font-black uppercase tracking-wider text-zinc-100">Antigravity Mooncharts</span>
+            <span className="text-xs font-black uppercase tracking-wider text-zinc-100">Mooncharts</span>
             <span className="text-[9px] font-medium text-dark-muted -mt-0.5">ESTILO MOONSCRAPER PRO CHART EDITOR</span>
           </div>
         </div>

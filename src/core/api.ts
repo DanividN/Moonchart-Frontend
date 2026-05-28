@@ -2,104 +2,14 @@
 const BASE_URL = 'http://localhost:8000/api/v1';
 
 export class APIClient {
-  private static token: string | null = null;
-  private static projectId: string | null = null;
-
-  // 1. Authenticate or Register test user
-  public static async authenticate(): Promise<string> {
-    if (this.token) return this.token;
-
-    const email = 'test_charter@antigravity.com';
-    const password = 'Password123!';
-
-    try {
-      // Try logging in
-      const formData = new URLSearchParams();
-      formData.append('username', email);
-      formData.append('password', password);
-
-      const loginRes = await fetch(`${BASE_URL}/users/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData,
-      });
-
-      if (loginRes.ok) {
-        const data = await loginRes.json();
-        this.token = data.access_token;
-        return this.token!;
-      }
-
-      // If login fails, register the user
-      const registerRes = await fetch(`${BASE_URL}/users/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, full_name: 'Mooncharts Charter' }),
-      });
-
-      if (registerRes.ok) {
-        // Log in again
-        const retryRes = await fetch(`${BASE_URL}/users/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: formData,
-        });
-        const data = await retryRes.json();
-        this.token = data.access_token;
-        return this.token!;
-      }
-
-      throw new Error("Authentication failed");
-    } catch (err) {
-      console.warn("FastAPI offline or connection failed. Using high-fidelity local simulator.", err);
-      throw err;
-    }
-  }
-
-  // 2. Get or create active project
-  public static async getOrCreateProject(token: string): Promise<string> {
-    if (this.projectId) return this.projectId;
-
-    const projectsRes = await fetch(`${BASE_URL}/projects/`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-
-    if (projectsRes.ok) {
-      const projects = await projectsRes.json();
-      if (projects.length > 0) {
-        this.projectId = projects[0].id;
-        return this.projectId!;
-      }
-    }
-
-    // Create a new project if none exists
-    const createRes = await fetch(`${BASE_URL}/projects/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        name: 'My New Song Chart',
-        description: 'Auto-analyzed Clone Hero Project'
-      })
-    });
-
-    const project = await createRes.json();
-    this.projectId = project.id;
-    return this.projectId!;
-  }
 
   // 3. Upload audio file
-  public static async uploadAudio(projectId: string, file: File, token: string) {
+  public static async uploadAudio(file: File) {
     const formData = new FormData();
     formData.append('file', file);
 
-    const res = await fetch(`${BASE_URL}/audio/upload?project_id=${projectId}`, {
+    const res = await fetch(`${BASE_URL}/audio/upload`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      },
       body: formData,
     });
 
@@ -109,17 +19,38 @@ export class APIClient {
     return await res.json();
   }
 
+  // 3.5. Upload isolated stem file
+  public static async uploadStem(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const res = await fetch(`${BASE_URL}/audio/upload-stem`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to upload stem file");
+    }
+
+    return await res.json();
+  }
+
   // 4. Trigger Celery processing pipeline
-  public static async triggerAnalysis(projectId: string, instrument: string, token: string) {
+  public static async triggerAnalysis(instrument: string, sensitivity: number = 50.0, complexity: number = 50.0, bpm: number = 120.0, isIsolatedStem: boolean = false) {
     const res = await fetch(`${BASE_URL}/audio/process`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        project_id: projectId,
-        job_type: `midi_generation:${instrument}` // Passes the target instrument to the backend pipeline
+        job_type: `midi_generation:${instrument}`, // Passes the target instrument to the backend pipeline
+        options: {
+          sensitivity,
+          complexity,
+          bpm,
+          is_isolated_stem: isIsolatedStem
+        }
       })
     });
 
@@ -130,11 +61,9 @@ export class APIClient {
   }
 
   // 5. Poll job status until completed
-  public static async pollJob(jobId: string, token: string): Promise<any> {
+  public static async pollJob(jobId: string): Promise<any> {
     const checkStatus = async (): Promise<any> => {
-      const res = await fetch(`${BASE_URL}/audio/jobs/${jobId}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
+      const res = await fetch(`${BASE_URL}/audio/jobs/${jobId}`);
 
       if (!res.ok) throw new Error("Error fetching job status");
       

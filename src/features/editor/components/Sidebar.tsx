@@ -34,6 +34,14 @@ export const Sidebar: React.FC = () => {
   } = useChartStore();
 
   const [lyricsMode, setLyricsMode] = React.useState<'simple' | 'timestamped'>('simple');
+  const [sensitivity, setSensitivity] = React.useState(50);
+  const [complexity, setComplexity] = React.useState(50);
+  const [stemFile, setStemFile] = React.useState<File | null>(null);
+
+  // Clear the stem file if the active instrument changes
+  React.useEffect(() => {
+    setStemFile(null);
+  }, [activeInstrument]);
 
   const handleLyricsFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -144,8 +152,20 @@ export const Sidebar: React.FC = () => {
   const handleTriggerAI = async () => {
     if (!audioFile) {
       Swal.fire({
-        title: 'Falta Archivo de Audio',
+        title: 'Falta Archivo Maestro',
         text: 'Por favor, selecciona y carga un archivo de audio MP3 o WAV en el encabezado primero.',
+        icon: 'warning',
+        background: '#09090b',
+        color: '#f4f4f5',
+        confirmButtonColor: '#8b5cf6',
+      });
+      return;
+    }
+
+    if (!stemFile && activeInstrument !== 'vocals') {
+      Swal.fire({
+        title: 'Falta Stem Aislado',
+        text: `Debes subir el archivo de pista aislada (Stem) para la ${activeInstrument === 'drums' ? 'batería' : activeInstrument === 'bass' ? 'bajo' : 'guitarra'} antes de continuar.`,
         icon: 'warning',
         background: '#09090b',
         color: '#f4f4f5',
@@ -156,251 +176,52 @@ export const Sidebar: React.FC = () => {
 
     setProcessingJob('api-job', 'processing');
     
-    // Dynamic generator across the entire song length using high-precision DSP Peak detection
-    const makeSuggestions = () => {
-      const { bpm, ticksPerBeat } = useChartStore.getState();
-      
-      // Try to analyze the physical transient peaks of the decoded audio!
-      const precisePeaks = audioEngine.analyzePeaks(bpm, ticksPerBeat, activeInstrument);
-      
-      // Target density settings depending on active menu difficulty
-      const difficultyStep = {
-        easy: 4.0,     // Sparse note intervals (every 4 beats)
-        medium: 2.0,   // Moderate intervals (every 2 beats)
-        hard: 1.5,     // Dense intervals (every 1.5 beats)
-        expert: 0.75   // High density (every 0.75 beats)
-      }[activeDifficulty] || 1.5;
-
-      if (precisePeaks && precisePeaks.length > 0) {
-        const factor = {
-          easy: 0.2,
-          medium: 0.4,
-          hard: 0.7,
-          expert: 1.0
-        }[activeDifficulty] || 1.0;
-        
-        let filteredPeaks = precisePeaks;
-        if (factor < 1.0) {
-          filteredPeaks = precisePeaks.filter((_, idx) => idx % Math.round(1 / factor) === 0);
-        }
-        return filteredPeaks;
-      }
-
-      // Fallback dynamic generator if buffer is still decoding
-      const duration = audioEngine.getDuration() || 180;
-      const totalBeats = Math.floor(duration * (bpm / 60));
-      const list: AISuggestion[] = [];
-      
-      let reasons: string[] = [];
-      if (activeInstrument === 'guitar') {
-        reasons = ['Guitar Transient Match', 'Guitar peak detected', 'Strum peak shift', 'Melodic pitch onset'];
-      } else if (activeInstrument === 'bass') {
-        reasons = ['Bass Line Groove Match', 'Sub-bass Low End Transient', 'Bass pitch peak'];
-      } else if (activeInstrument === 'drums') {
-        reasons = ['Drum Transient Sync', 'Snare transient sync', 'Kick drum sync', 'Hi-Hat Hit Alignment'];
-      } else {
-        reasons = ['Vocal Syllable Onset', 'Melodic Vocal Peak', 'Vibrato Accent Alignment'];
-      }
-
-      for (let beat = 4; beat < totalBeats; beat += difficultyStep) {
-        const tick = Math.floor(beat * 192);
-        
-        let lane = 0;
-        let duration = 0;
-        let type: Note['type'] = 'strum';
-        const lanesToPush: number[] = [];
-        let reason = 'AI Note';
-
-        const progress = beat / totalBeats;
-
-        if (activeInstrument === 'guitar' || activeInstrument === 'bass') {
-          // Identify structural segments and apply user's rules
-          if (progress < 0.1) {
-            // 1. INTRO: Sustains + Simple Strums for warming up
-            reason = 'Intro Atmospheric Sustain';
-            lane = Math.floor((beat * 2) % 5);
-            lanesToPush.push(lane);
-            if (beat % 4 === 0) {
-              duration = 384; // 2 beat sustain
-            }
-          } else if ((progress >= 0.1 && progress < 0.3) || (progress >= 0.55 && progress < 0.7)) {
-            // 2. VERSE: Basic Strum notes + Open Notes (palm mute) + Simple 2-note chords
-            if (beat % 4 === 0) {
-              lane = 7; // Open Note (Purple bar)
-              lanesToPush.push(7);
-              reason = ' palm mute Open Note';
-            } else {
-              lane = Math.floor((beat * 3) % 5);
-              lanesToPush.push(lane);
-              reason = 'Verse Rhythmic Strum';
-              if (beat % 6 === 0) {
-                lanesToPush.push((lane + 1) % 5); // 2-note chord
-                reason = 'Verse 2-Note Chord';
-              }
-            }
-          } else if ((progress >= 0.3 && progress < 0.4) || (progress >= 0.7 && progress < 0.8)) {
-            // 3. PRE-CHORUS: Rising double chords building tension
-            reason = 'Pre-Chorus Tension Chord';
-            lane = Math.floor(beat % 4);
-            lanesToPush.push(lane);
-            lanesToPush.push((lane + 1) % 5);
-          } else if ((progress >= 0.4 && progress < 0.55) || (progress >= 0.8 && progress < 0.95)) {
-            // 4. CHORUS: Dense 3-note chords for maximum explosive power
-            reason = 'Chorus Explosive Power Chord';
-            lane = Math.floor(beat % 3);
-            lanesToPush.push(lane);
-            lanesToPush.push((lane + 1) % 5);
-            lanesToPush.push((lane + 2) % 5);
-          } else if (progress >= 0.95 && progress < 0.98) {
-            // 5. GUITAR SOLO: Hyper-fast HOPOs & Tapping Slider Notes!
-            const isHopo = beat % 2 === 0;
-            reason = isHopo ? 'Solo Fast HOPO Run' : 'Solo High Speed Tapping (Tap Note)';
-            lane = Math.floor((beat * 7) % 5);
-            lanesToPush.push(lane);
-            type = isHopo ? 'hopo' : 'tap';
-            
-            // Speed up solo beats by advancing in smaller steps!
-            beat -= (difficultyStep * 0.4); 
-          } else {
-            // 6. OUTRO: Atmospheric long sustains decay
-            reason = 'Outro Decay Sustain';
-            lane = Math.floor(beat % 5);
-            lanesToPush.push(lane);
-            duration = 576; // 3 beat sustain
-          }
-        } else if (activeInstrument === 'drums') {
-          // Identify structural segments and apply high-fidelity drumming rules!
-          const beatInBar = beat % 4; // 4/4 timing
-          
-          if (progress < 0.1) {
-            // 1. INTRO / COUNT-IN: Simple Hi-Hat (Yellow) marking time, occasional Downbeat Kick
-            if (beat % 1 === 0) {
-              lane = 2; // Hi-Hat (Yellow)
-              lanesToPush.push(2);
-              reason = 'Intro Hi-Hat Count-In';
-            }
-            if (beat % 4 === 0) {
-              lanesToPush.push(0); // Kick on beat 1
-            }
-          } else if ((progress >= 0.1 && progress < 0.35) || (progress >= 0.55 && progress < 0.7)) {
-            // 2. VERSE: Constant Hi-Hat (Yellow), Snare backbeats on 2 & 4, Kicks on 1 & 3
-            lanesToPush.push(2); // Hi-Hat (Yellow)
-            
-            if (beatInBar === 0 || beatInBar === 2) {
-              lanesToPush.push(0); // Kick (Bombo / Lane 0)
-              reason = 'Verse Kick Drum Groove';
-            } else if (beatInBar === 1 || beatInBar === 3) {
-              lanesToPush.push(1); // Snare backbeat (Caja / Lane 1)
-              reason = 'Verse Snare Backbeat';
-            }
-
-            // Occasional tom fills at the end of phrase sections (every 16 beats)
-            if (Math.floor(beat) % 16 === 15) {
-              lanesToPush.length = 0; // replace standard groove
-              lanesToPush.push(1, 2, 3, 4); // Cascade Snare -> Tom Alto -> Tom Medio -> Floor Tom
-              reason = 'Verse Tom Fill Transition';
-            }
-          } else if ((progress >= 0.35 && progress < 0.4) || (progress >= 0.7 && progress < 0.8)) {
-            // 3. PRE-CHORUS: Snare Build-up (Redoble) increasing tension
-            lanesToPush.push(1); // Snare
-            reason = 'Pre-Chorus Snare Build-up';
-            if (beat % 0.5 === 0) {
-              lanesToPush.push(1); // Rapid notes
-            }
-            if (beat % 2 === 0) {
-              lanesToPush.push(0); // Kick
-            }
-          } else if ((progress >= 0.4 && progress < 0.55) || (progress >= 0.8 && progress < 0.95)) {
-            // 4. CHORUS: Open energetic Ride Cymbal (Blue) or Crash (Green), heavier active Kicks
-            const cymbal = beat % 2 === 0 ? 3 : 4; // Alternate Ride (3) & Crash (4)
-            lanesToPush.push(cymbal);
-            
-            if (beatInBar === 0 || beatInBar === 2 || beatInBar === 1.5 || beatInBar === 2.5) {
-              lanesToPush.push(0); // Syncopated double kicks
-              reason = 'Chorus Energetic Kick Syncopation';
-            }
-            if (beatInBar === 1 || beatInBar === 3) {
-              lanesToPush.push(1); // Snare Backbeat
-              reason = 'Chorus Snare Backbeat';
-            }
-          } else if (progress >= 0.95 && progress < 0.98) {
-            // 5. DRUM BRIDGE FILL: Fast cascading fills down all toms (Red -> Yellow -> Blue -> Green)
-            const step = Math.floor(beat * 4) % 4; // 16th notes fill
-            lane = step + 1; // Lanes 1, 2, 3, 4
-            lanesToPush.push(lane);
-            reason = 'Solo Bridge Drum Fill Cascade';
-          } else {
-            // 6. OUTRO: Decrescendo and final crash decay
-            if (beat % 4 === 0) {
-              lanesToPush.push(4, 0); // Crash (4) + Kick (0)
-              reason = 'Outro Final Crash Hit';
-            } else if (beat % 2 === 0) {
-              lanesToPush.push(3); // Ride (3)
-              reason = 'Outro Ride Decay';
-            }
-          }
-          type = 'strum';
-        } else {
-          lane = Math.floor((beat * 11 + 2) % 5);
-          lanesToPush.push(lane);
-          reason = 'Vocal Syllable Sync';
-        }
-
-        const confidence = 0.85 + Math.random() * 0.14;
-        
-        lanesToPush.forEach((l) => {
-          list.push({
-            id: `ai-gen-${beat}-${tick}-${l}-${activeInstrument}`,
-            tick,
-            lane: l,
-            confidence: l === lane ? confidence : confidence * 0.9,
-            reason: l === lane ? reason : 'AI Chord Voicing Suggestion',
-            duration,
-            type
-          });
-        });
-      }
-      return list;
+    // The backend now generates notes. We just provide a minimal fallback for development if needed.
+    const makeSuggestionsFallback = () => {
+      return [];
     };
 
     try {
-      // 1. Authenticate and get Token
-      const token = await APIClient.authenticate();
-      
-      // 2. Get or Create Project ID
-      const projectId = await APIClient.getOrCreateProject(token);
+      // 1. Upload Audio File Asset to FastAPI directly (Master track)
+      await APIClient.uploadAudio(audioFile);
 
-      // 3. Upload Audio File Asset to FastAPI
-      await APIClient.uploadAudio(projectId, audioFile, token);
+      // 1.5 Upload Stem File (Target instrument track)
+      if (stemFile && activeInstrument !== 'vocals') {
+        await APIClient.uploadStem(stemFile);
+      }
 
-      // 4. Trigger Celery audio separator and midi analyzer
-      const jobResponse = await APIClient.triggerAnalysis(projectId, activeInstrument, token);
+      // 2. Trigger Celery audio separator and midi analyzer
+      const { bpm } = useChartStore.getState();
+      const jobResponse = await APIClient.triggerAnalysis(activeInstrument, sensitivity, complexity, bpm, true); // true = bypass demucs
       const jobId = jobResponse.id;
 
-      // 5. Poll Job status
-      await APIClient.pollJob(jobId, token);
+      // 3. Poll Job status
+      const job = await APIClient.pollJob(jobId);
 
       // Load separated audio stems from backend dynamically!
       await audioEngine.loadStemsFromBackend(jobId);
 
       // 6. Complete and update state store
       setProcessingJob(jobId, 'completed');
-      setSuggestions(makeSuggestions());
+      
+      const generatedNotes = job.result_data?.notes || makeSuggestionsFallback();
+      setSuggestions(generatedNotes);
       setWarnings([
         { id: 'w-ai-1', tick: 192 * 5, message: 'Detección Rítmica: Patrón de redoble sugerido para Batería.', severity: 'info' },
         { id: 'w-ai-2', tick: 192 * 12, message: 'Sugerencia de marca: Cambio de sección a Solo 1.', severity: 'info' }
       ]);
     } catch (err) {
-      console.warn("Connection to FastAPI failed. Running high-fidelity local simulator.", err);
-      // Gracious fallback
-      setTimeout(() => {
-        setProcessingJob('mock-job', 'completed');
-        setSuggestions(makeSuggestions());
-        setWarnings([
-          { id: 'w-ai-1', tick: 192 * 5, message: 'Detección Rítmica: Patrón de redoble sugerido para Batería.', severity: 'info' },
-          { id: 'w-ai-2', tick: 192 * 12, message: 'Sugerencia de marca: Cambio de sección a Solo 1.', severity: 'info' }
-        ]);
-      }, 1500);
+      console.warn("Connection to FastAPI failed.", err);
+      // Clean error state so user knows it failed
+      setProcessingJob(null, 'idle');
+      Swal.fire({
+        title: 'Error de Servidor',
+        text: 'Fallo la conexión con el Backend de IA o la autenticación. Revisa que FastAPI esté corriendo (uvicorn app.main:app) y que no haya errores de CORS.',
+        icon: 'error',
+        background: '#09090b',
+        color: '#f4f4f5',
+        confirmButtonColor: '#8b5cf6',
+      });
     }
   };
 
@@ -551,14 +372,68 @@ export const Sidebar: React.FC = () => {
           </div>
         )}
 
+        {/* AI Sliders */}
+        {activeInstrument !== 'vocals' && (
+          <div className="mb-4 space-y-3 bg-zinc-900/50 p-3 rounded-lg border border-dark-border">
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-zinc-300 font-medium">Sensibilidad de Detección</span>
+                <span className="font-mono text-cyan-400">{sensitivity}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={sensitivity}
+                onChange={(e) => setSensitivity(parseInt(e.target.value))}
+                className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+              />
+              <p className="text-[9px] text-dark-muted mt-1 leading-tight">Controla cuántas notas se detectan. Mayor sensibilidad = más notas (incluye fantasmas).</p>
+            </div>
+            
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-zinc-300 font-medium">Complejidad Musical</span>
+                <span className="font-mono text-purple-400">{complexity}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={complexity}
+                onChange={(e) => setComplexity(parseInt(e.target.value))}
+                className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+              />
+              <p className="text-[9px] text-dark-muted mt-1 leading-tight">Habilita acordes dobles/triples, sostenidos largos y HOPOs a alta velocidad.</p>
+            </div>
+
+            <div className="pt-2 border-t border-dark-border/50">
+              <span className="text-[10px] text-zinc-300 font-medium block mb-1">Cargar Stem de {activeInstrument === 'drums' ? 'Batería' : activeInstrument === 'bass' ? 'Bajo' : 'Guitarra'} (Obligatorio)</span>
+              <p className="text-[9px] text-dark-muted mb-2 leading-tight">Sube la pista aislada para evitar el separador de IA y obtener resultados limpios al instante.</p>
+              
+              <label className="block w-full py-2 px-3 rounded bg-zinc-950 border border-dark-border border-dashed hover:border-purple-500 hover:text-purple-400 text-[10px] font-bold text-zinc-400 text-center cursor-pointer transition-all">
+                {stemFile ? `🎵 ${stemFile.name}` : '📁 Seleccionar Stem (.mp3 o .wav)'}
+                <input
+                  type="file"
+                  accept=".mp3,.wav,.ogg"
+                  onChange={(e) => setStemFile(e.target.files?.[0] || null)}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </div>
+        )}
+
         {/* Trigger analysis button */}
         <button
           onClick={handleTriggerAI}
-          disabled={processingStatus === 'processing'}
+          disabled={processingStatus === 'processing' || (!stemFile && activeInstrument !== 'vocals')}
           className={`w-full py-2 px-3 rounded-lg flex items-center justify-center gap-2 text-xs font-bold transition-all ${
             processingStatus === 'processing'
               ? 'bg-purple-950/40 border border-purple-800 text-purple-400 cursor-not-allowed'
-              : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-600/10 active:scale-[0.98]'
+              : (!stemFile && activeInstrument !== 'vocals')
+                ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700/50'
+                : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-600/10 active:scale-[0.98]'
           }`}
         >
           <Sparkles size={14} />

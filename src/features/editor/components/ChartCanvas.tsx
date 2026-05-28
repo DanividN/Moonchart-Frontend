@@ -227,24 +227,30 @@ export const ChartCanvas: React.FC = () => {
         const y = tickToY(sug.tick, height);
         if (y < -20 || y > height + 20) return;
 
-        const x = getCanvasX(sug.lane, width) + LANE_WIDTH / 2;
+        const isSpecial = sug.lane === 7 || sug.type === 'kick_pedal';
+        const color = sug.lane === 7 ? '#a855f7' : (sug.type === 'kick_pedal' ? '#d946ef' : LANE_COLORS[sug.lane] || '#ffffff');
+        const x = isSpecial ? startX + totalHighwayWidth / 2 : getCanvasX(sug.lane, width) + LANE_WIDTH / 2;
 
-        ctx.strokeStyle = LANE_COLORS[sug.lane];
+        ctx.strokeStyle = color;
         ctx.fillStyle = 'rgba(24, 24, 27, 0.6)';
         ctx.lineWidth = 2.5;
         ctx.setLineDash([4, 2]); // Dashed indicator for suggestions
         
         ctx.beginPath();
-        ctx.arc(x, y, 16, 0, Math.PI * 2);
+        if (isSpecial) {
+           ctx.roundRect(startX + 4, y - 4, totalHighwayWidth - 8, 8, 3);
+        } else {
+           ctx.arc(x, y, 16, 0, Math.PI * 2);
+        }
         ctx.fill();
         ctx.stroke();
         ctx.setLineDash([]);
 
         // AI Chip Tag
-        ctx.fillStyle = LANE_COLORS[sug.lane];
+        ctx.fillStyle = color;
         ctx.font = '8px Inter';
         ctx.textAlign = 'center';
-        ctx.fillText(`AI ${(sug.confidence * 100).toFixed(0)}%`, x, y - 22);
+        ctx.fillText(`AI ${(sug.confidence * 100).toFixed(0)}%`, x, y - (isSpecial ? 12 : 22));
       });
 
       // 7. Render placed MIDI Notes (Frustum Culled)
@@ -748,11 +754,18 @@ export const ChartCanvas: React.FC = () => {
       const newlySelected = new Set<string>();
       visible.forEach(note => {
         const noteY = tickToY(note.tick, canvas.height);
-        const noteX = note.instrument === 'vocals'
-          ? (startX + totalHighwayWidth / 2)
-          : (getCanvasX(note.lane, canvas.width) + LANE_WIDTH / 2);
+        let isInsideX = false;
+
+        if (note.lane === 7) {
+          isInsideX = (boxX <= startX + totalHighwayWidth) && ((boxX + boxW) >= startX);
+        } else {
+          const noteX = note.instrument === 'vocals'
+            ? (startX + totalHighwayWidth / 2)
+            : (getCanvasX(note.lane, canvas.width) + LANE_WIDTH / 2);
+          isInsideX = noteX >= boxX && noteX <= boxX + boxW;
+        }
         
-        if (noteX >= boxX && noteX <= boxX + boxW && noteY >= boxY && noteY <= boxY + boxH) {
+        if (isInsideX && noteY >= boxY && noteY <= boxY + boxH) {
           newlySelected.add(note.id);
         }
       });
@@ -800,7 +813,7 @@ export const ChartCanvas: React.FC = () => {
             const orig = originalPositions.get(n.id);
             if (orig) {
               const newTick = Math.max(0, orig.tick + tickDiff);
-              const newLane = activeInstrument === 'vocals' ? 0 : Math.min(LANE_COUNT - 1, Math.max(0, orig.lane + laneDiff));
+              const newLane = activeInstrument === 'vocals' ? 0 : (orig.lane === 7 ? 7 : Math.min(LANE_COUNT - 1, Math.max(0, orig.lane + laneDiff)));
               return { ...n, tick: newTick, lane: newLane };
             }
           }
@@ -885,7 +898,7 @@ export const ChartCanvas: React.FC = () => {
         return {
           notes: state.notes.map(n => 
             n.id === draggedMoveNoteId 
-              ? { ...n, tick, lane: targetLane } 
+              ? { ...n, tick, lane: n.lane === 7 ? 7 : targetLane } 
               : n
           )
         };

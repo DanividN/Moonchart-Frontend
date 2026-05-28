@@ -37,7 +37,7 @@ export class APIClient {
   }
 
   // 4. Trigger Celery processing pipeline
-  public static async triggerAnalysis(instrument: string, sensitivity: number = 50.0, complexity: number = 50.0, bpm: number = 120.0, isIsolatedStem: boolean = false) {
+  public static async triggerAnalysis(instrument: string, bpm: number = 120.0, isIsolatedStem: boolean = false) {
     const res = await fetch(`${BASE_URL}/audio/process`, {
       method: 'POST',
       headers: {
@@ -46,8 +46,6 @@ export class APIClient {
       body: JSON.stringify({
         job_type: `midi_generation:${instrument}`, // Passes the target instrument to the backend pipeline
         options: {
-          sensitivity,
-          complexity,
           bpm,
           is_isolated_stem: isIsolatedStem
         }

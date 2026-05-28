@@ -579,21 +579,21 @@ export const ChartCanvas: React.FC = () => {
       // Render Star Power and Solo sections inside minimap as colored zones
       visibleNotes.forEach(note => {
         if (note.duration > 0) {
-          const yStart = minimapY + (note.tick / songEndTick) * minimapHeight;
-          const yEnd = minimapY + ((note.tick + note.duration) / songEndTick) * minimapHeight;
+          const yStart = minimapY + minimapHeight - (note.tick / songEndTick) * minimapHeight;
+          const yEnd = minimapY + minimapHeight - ((note.tick + note.duration) / songEndTick) * minimapHeight;
           if (note.type === 'star_power') {
             ctx.fillStyle = 'rgba(234, 179, 8, 0.25)';
-            ctx.fillRect(minimapX + 1, yStart, minimapWidth - 2, Math.max(3, yEnd - yStart));
+            ctx.fillRect(minimapX + 1, yEnd, minimapWidth - 2, Math.max(3, yStart - yEnd));
           } else if (note.type === 'solo') {
             ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
-            ctx.fillRect(minimapX + 1, yStart, minimapWidth - 2, Math.max(3, yEnd - yStart));
+            ctx.fillRect(minimapX + 1, yEnd, minimapWidth - 2, Math.max(3, yStart - yEnd));
           }
         }
       });
 
       // Render mini notes in minimap
       visibleNotes.forEach(note => {
-        const noteMinimapY = minimapY + (note.tick / songEndTick) * minimapHeight;
+        const noteMinimapY = minimapY + minimapHeight - (note.tick / songEndTick) * minimapHeight;
         const noteMinimapX = minimapX + 6 + (note.lane / 5) * (minimapWidth - 16);
 
         // Check if note is inside star power dynamically
@@ -612,14 +612,17 @@ export const ChartCanvas: React.FC = () => {
       const visibleStartTick = yToTick(height, height);
       const visibleEndTick = yToTick(0, height);
 
-      const viewportY1 = Math.max(minimapY, minimapY + (visibleStartTick / songEndTick) * minimapHeight);
-      const viewportY2 = Math.min(minimapY + minimapHeight, minimapY + (visibleEndTick / songEndTick) * minimapHeight);
+      const vY1 = Math.min(minimapY + minimapHeight, Math.max(minimapY, minimapY + minimapHeight - (visibleStartTick / songEndTick) * minimapHeight));
+      const vY2 = Math.min(minimapY + minimapHeight, Math.max(minimapY, minimapY + minimapHeight - (visibleEndTick / songEndTick) * minimapHeight));
+
+      const boxTop = Math.min(vY1, vY2);
+      const boxBottom = Math.max(vY1, vY2);
 
       ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.roundRect(minimapX, viewportY1, minimapWidth, Math.max(6, viewportY2 - viewportY1), 4);
+      ctx.roundRect(minimapX, boxTop, minimapWidth, Math.max(6, boxBottom - boxTop), 4);
       ctx.fill();
       ctx.stroke();
 
@@ -631,7 +634,7 @@ export const ChartCanvas: React.FC = () => {
       const totalMeasures = Math.ceil(songEndTick / (ticksPerBeat * 4));
       for (let m = 0; m < totalMeasures; m += 10) {
         const mTick = m * ticksPerBeat * 4;
-        const mY = minimapY + (mTick / songEndTick) * minimapHeight;
+        const mY = minimapY + minimapHeight - (mTick / songEndTick) * minimapHeight;
         if (mY >= minimapY && mY <= minimapY + minimapHeight) {
           ctx.fillText(`M${m + 1}`, minimapX - 4, mY + 2.5);
           ctx.strokeStyle = 'rgba(113, 113, 122, 0.2)';
@@ -790,7 +793,7 @@ export const ChartCanvas: React.FC = () => {
         notes.length > 0 ? Math.max(...notes.map(n => n.tick)) + 1920 : 19200
       );
       const minimapHeight = canvas.height - 60;
-      const pct = (y - 20) / minimapHeight;
+      const pct = 1 - ((y - 20) / minimapHeight);
       const targetTick = Math.max(0, Math.min(songEndTick, pct * songEndTick));
       setCurrentTick(targetTick);
       return;
@@ -1001,7 +1004,7 @@ export const ChartCanvas: React.FC = () => {
         duration * (bpm / 60) * ticksPerBeat,
         notes.length > 0 ? Math.max(...notes.map(n => n.tick)) + 1920 : 19200
       );
-      const pct = (y - 20) / minimapHeight;
+      const pct = 1 - ((y - 20) / minimapHeight);
       const targetTick = Math.max(0, Math.min(songEndTick, pct * songEndTick));
       setCurrentTick(targetTick);
       return;

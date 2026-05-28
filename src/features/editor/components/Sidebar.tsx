@@ -34,8 +34,6 @@ export const Sidebar: React.FC = () => {
   } = useChartStore();
 
   const [lyricsMode, setLyricsMode] = React.useState<'simple' | 'timestamped'>('simple');
-  const [sensitivity, setSensitivity] = React.useState(50);
-  const [complexity, setComplexity] = React.useState(50);
   const [stemFile, setStemFile] = React.useState<File | null>(null);
 
   // Clear the stem file if the active instrument changes
@@ -192,7 +190,7 @@ export const Sidebar: React.FC = () => {
 
       // 2. Trigger Celery audio separator and midi analyzer
       const { bpm } = useChartStore.getState();
-      const jobResponse = await APIClient.triggerAnalysis(activeInstrument, sensitivity, complexity, bpm, true); // true = bypass demucs
+      const jobResponse = await APIClient.triggerAnalysis(activeInstrument, bpm, true); // true = bypass demucs
       const jobId = jobResponse.id;
 
       // 3. Poll Job status
@@ -300,8 +298,8 @@ export const Sidebar: React.FC = () => {
 
         {/* If vocals are active, render lyrics uploader before the AI Trigger */}
         {activeInstrument === 'vocals' && (
-          <div className="mb-4 bg-zinc-900/50 p-3 rounded-lg border border-dark-border space-y-3">
-            <div className="flex items-center justify-between border-b border-dark-border pb-2">
+          <div className="mb-4 bg-zinc-900/50 p-3 rounded-lg border border-dark-border flex flex-col flex-grow gap-3">
+            <div className="flex items-center justify-between border-b border-dark-border pb-2 shrink-0">
               <div className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider">
                 Letras de la Canción
               </div>
@@ -330,11 +328,11 @@ export const Sidebar: React.FC = () => {
             </div>
 
             {lyricsMode === 'simple' ? (
-              <>
-                <p className="text-[10px] text-dark-muted">
+              <div className="flex flex-col flex-grow gap-2">
+                <p className="text-[10px] text-dark-muted shrink-0">
                   Carga un archivo .txt con la letra. Cada palabra se sincronizará secuencialmente a medida que aceptes las sugerencias de voz.
                 </p>
-                <label className="block w-full py-1.5 px-3 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] font-bold text-zinc-200 border border-dark-border text-center cursor-pointer transition-all">
+                <label className="shrink-0 block w-full py-1.5 px-3 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] font-bold text-zinc-200 border border-dark-border text-center cursor-pointer transition-all">
                   📁 Seleccionar archivo .txt
                   <input
                     type="file"
@@ -347,155 +345,124 @@ export const Sidebar: React.FC = () => {
                   value={lyricsText}
                   onChange={(e) => setLyricsText(e.target.value)}
                   placeholder="Escribe o edita la letra aquí..."
-                  className="w-full h-24 bg-zinc-950 border border-dark-border text-[10px] text-zinc-300 rounded p-2 outline-none resize-none font-mono focus:border-cyan-500"
+                  className="w-full flex-grow min-h-[150px] bg-zinc-950 border border-dark-border text-[10px] text-zinc-300 rounded p-2 outline-none resize-none font-mono focus:border-cyan-500"
                 />
-              </>
+              </div>
             ) : (
-              <>
-                <p className="text-[10px] text-dark-muted">
+              <div className="flex flex-col flex-grow gap-2">
+                <p className="text-[10px] text-dark-muted shrink-0">
                   Escribe estrofas con su segundo de inicio como <code className="text-cyan-400 bg-zinc-950 px-1 py-0.2 rounded font-mono">[00:12] hola mundo</code> para colocarlas automáticamente.
                 </p>
                 <textarea
                   value={lyricsText}
                   onChange={(e) => setLyricsText(e.target.value)}
                   placeholder="Ejemplo:&#10;[00:12.50] lo mejor de esta vida&#10;[00:18.00] se me escapa volando"
-                  className="w-full h-28 bg-zinc-950 border border-dark-border text-[10px] text-zinc-300 rounded p-2 outline-none resize-none font-mono focus:border-cyan-500"
+                  className="w-full flex-grow min-h-[150px] bg-zinc-950 border border-dark-border text-[10px] text-zinc-300 rounded p-2 outline-none resize-none font-mono focus:border-cyan-500"
                 />
                 <button
                   onClick={handleSyncTimestampedLyrics}
-                  className="w-full py-1.5 px-2 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-[10px] rounded border border-cyan-400/20 active:scale-[0.98] transition-all flex items-center justify-center gap-1"
+                  className="w-full shrink-0 py-1.5 px-2 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-[10px] rounded border border-cyan-400/20 active:scale-[0.98] transition-all flex items-center justify-center gap-1"
                 >
                   ⚡ Sincronizar Estrofas en el Editor
                 </button>
-              </>
+              </div>
             )}
           </div>
         )}
 
-        {/* AI Sliders */}
         {activeInstrument !== 'vocals' && (
-          <div className="mb-4 space-y-3 bg-zinc-900/50 p-3 rounded-lg border border-dark-border">
-            <div className="space-y-1">
-              <div className="flex justify-between items-center text-[10px]">
-                <span className="text-zinc-300 font-medium">Sensibilidad de Detección</span>
-                <span className="font-mono text-cyan-400">{sensitivity}%</span>
+          <>
+            <div className="mb-4 space-y-3 bg-zinc-900/50 p-3 rounded-lg border border-dark-border">
+              <div className="pt-2">
+                <span className="text-[10px] text-zinc-300 font-medium block mb-1">Cargar Stem de {activeInstrument === 'drums' ? 'Batería' : activeInstrument === 'bass' ? 'Bajo' : 'Guitarra'} (Obligatorio)</span>
+                <p className="text-[9px] text-dark-muted mb-2 leading-tight">Sube la pista aislada para evitar el separador de IA y obtener resultados limpios al instante.</p>
+                
+                <label className="block w-full py-2 px-3 rounded bg-zinc-950 border border-dark-border border-dashed hover:border-purple-500 hover:text-purple-400 text-[10px] font-bold text-zinc-400 text-center cursor-pointer transition-all">
+                  {stemFile ? `🎵 ${stemFile.name}` : '📁 Seleccionar Stem (.mp3 o .wav)'}
+                  <input
+                    type="file"
+                    accept=".mp3,.wav,.ogg"
+                    onChange={(e) => setStemFile(e.target.files?.[0] || null)}
+                    className="hidden"
+                  />
+                </label>
               </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={sensitivity}
-                onChange={(e) => setSensitivity(parseInt(e.target.value))}
-                className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-              />
-              <p className="text-[9px] text-dark-muted mt-1 leading-tight">Controla cuántas notas se detectan. Mayor sensibilidad = más notas (incluye fantasmas).</p>
-            </div>
-            
-            <div className="space-y-1">
-              <div className="flex justify-between items-center text-[10px]">
-                <span className="text-zinc-300 font-medium">Complejidad Musical</span>
-                <span className="font-mono text-purple-400">{complexity}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={complexity}
-                onChange={(e) => setComplexity(parseInt(e.target.value))}
-                className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-              />
-              <p className="text-[9px] text-dark-muted mt-1 leading-tight">Habilita acordes dobles/triples, sostenidos largos y HOPOs a alta velocidad.</p>
             </div>
 
-            <div className="pt-2 border-t border-dark-border/50">
-              <span className="text-[10px] text-zinc-300 font-medium block mb-1">Cargar Stem de {activeInstrument === 'drums' ? 'Batería' : activeInstrument === 'bass' ? 'Bajo' : 'Guitarra'} (Obligatorio)</span>
-              <p className="text-[9px] text-dark-muted mb-2 leading-tight">Sube la pista aislada para evitar el separador de IA y obtener resultados limpios al instante.</p>
-              
-              <label className="block w-full py-2 px-3 rounded bg-zinc-950 border border-dark-border border-dashed hover:border-purple-500 hover:text-purple-400 text-[10px] font-bold text-zinc-400 text-center cursor-pointer transition-all">
-                {stemFile ? `🎵 ${stemFile.name}` : '📁 Seleccionar Stem (.mp3 o .wav)'}
-                <input
-                  type="file"
-                  accept=".mp3,.wav,.ogg"
-                  onChange={(e) => setStemFile(e.target.files?.[0] || null)}
-                  className="hidden"
-                />
-              </label>
-            </div>
-          </div>
-        )}
+            {/* Trigger analysis button */}
+            <button
+              onClick={handleTriggerAI}
+              disabled={processingStatus === 'processing' || (!stemFile && activeInstrument !== 'vocals')}
+              className={`w-full py-2 px-3 rounded-lg flex items-center justify-center gap-2 text-xs font-bold transition-all ${
+                processingStatus === 'processing'
+                  ? 'bg-purple-950/40 border border-purple-800 text-purple-400 cursor-not-allowed'
+                  : (!stemFile && activeInstrument !== 'vocals')
+                    ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700/50'
+                    : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-600/10 active:scale-[0.98]'
+              }`}
+            >
+              <Sparkles size={14} />
+              {processingStatus === 'processing' 
+                ? (activeInstrument === 'vocals' ? 'Sincronizando lírica...' : 'Analizando audio...') 
+                : (activeInstrument === 'vocals' ? 'Autogenerar Lírica con IA' : 'Autogenerar Notas con IA')}
+            </button>
 
-        {/* Trigger analysis button */}
-        <button
-          onClick={handleTriggerAI}
-          disabled={processingStatus === 'processing' || (!stemFile && activeInstrument !== 'vocals')}
-          className={`w-full py-2 px-3 rounded-lg flex items-center justify-center gap-2 text-xs font-bold transition-all ${
-            processingStatus === 'processing'
-              ? 'bg-purple-950/40 border border-purple-800 text-purple-400 cursor-not-allowed'
-              : (!stemFile && activeInstrument !== 'vocals')
-                ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700/50'
-                : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-600/10 active:scale-[0.98]'
-          }`}
-        >
-          <Sparkles size={14} />
-          {processingStatus === 'processing' 
-            ? (activeInstrument === 'vocals' ? 'Sincronizando lírica...' : 'Analizando audio...') 
-            : (activeInstrument === 'vocals' ? 'Autogenerar Lírica con IA' : 'Autogenerar Notas con IA')}
-        </button>
-
-        {/* AI Recommendations Dashboard */}
-        <div className="mt-4 flex-grow flex flex-col">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-bold text-dark-muted uppercase tracking-wider">
-              Recomendaciones detectadas ({aiSuggestions.length})
-            </span>
-            {aiSuggestions.length > 0 && (
-              <button
-                onClick={acceptAllSuggestions}
-                className="text-[10px] font-bold text-purple-400 hover:text-purple-300 transition-all bg-purple-950/40 hover:bg-purple-600 hover:text-white px-2 py-0.5 rounded border border-purple-800/40 cursor-pointer active:scale-95"
-                title="Aceptar y agregar todas las sugerencias de la IA a la pista de una sola vez"
-              >
-                Aceptar todas
-              </button>
-            )}
-          </div>
-
-          <div className="space-y-2 max-h-48 overflow-y-auto pr-1 flex-grow">
-            {aiSuggestions.length === 0 ? (
-              <div className="border border-dashed border-dark-border rounded-lg p-4 text-center text-xs text-dark-muted flex flex-col items-center justify-center gap-2">
-                <Activity size={18} className="text-dark-muted opacity-40 animate-pulse" />
-                <span>No hay sugerencias de notas listas. Ejecuta el pipeline de IA arriba.</span>
-              </div>
-            ) : (
-              aiSuggestions.map((sug) => (
-                <div 
-                  key={sug.id}
-                  className="bg-zinc-900 border border-dark-border rounded-lg p-2 flex items-center justify-between gap-3 group hover:border-purple-600/40 transition-colors"
-                >
-                  <div className="flex flex-col gap-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] bg-purple-950 text-purple-400 px-1 py-0.2 rounded font-mono font-semibold">
-                        Tick {sug.tick}
-                      </span>
-                      <span className="text-[10px] font-bold text-zinc-300">
-                        {sug.reason}
-                      </span>
-                    </div>
-                    <span className="text-[9px] text-dark-muted">
-                      Confianza: {(sug.confidence * 100).toFixed(0)}%
-                    </span>
-                  </div>
+            {/* AI Recommendations Dashboard */}
+            <div className="mt-4 flex-grow flex flex-col">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-dark-muted uppercase tracking-wider">
+                  Recomendaciones detectadas ({aiSuggestions.length})
+                </span>
+                {aiSuggestions.length > 0 && (
                   <button
-                    onClick={() => acceptAISuggestion(sug.id)}
-                    className="p-1 rounded bg-purple-950/40 hover:bg-purple-600 text-purple-400 hover:text-white transition-colors"
-                    title="Aceptar nota y agregar a pista"
+                    onClick={acceptAllSuggestions}
+                    className="text-[10px] font-bold text-purple-400 hover:text-purple-300 transition-all bg-purple-950/40 hover:bg-purple-600 hover:text-white px-2 py-0.5 rounded border border-purple-800/40 cursor-pointer active:scale-95"
+                    title="Aceptar y agregar todas las sugerencias de la IA a la pista de una sola vez"
                   >
-                    <Check size={12} />
+                    Aceptar todas
                   </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+                )}
+              </div>
+
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1 flex-grow">
+                {aiSuggestions.length === 0 ? (
+                  <div className="border border-dashed border-dark-border rounded-lg p-4 text-center text-xs text-dark-muted flex flex-col items-center justify-center gap-2">
+                    <Activity size={18} className="text-dark-muted opacity-40 animate-pulse" />
+                    <span>No hay sugerencias de notas listas. Ejecuta el pipeline de IA arriba.</span>
+                  </div>
+                ) : (
+                  aiSuggestions.map((sug) => (
+                    <div 
+                      key={sug.id}
+                      className="bg-zinc-900 border border-dark-border rounded-lg p-2 flex items-center justify-between gap-3 group hover:border-purple-600/40 transition-colors"
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] bg-purple-950 text-purple-400 px-1 py-0.2 rounded font-mono font-semibold">
+                            Tick {sug.tick}
+                          </span>
+                          <span className="text-[10px] font-bold text-zinc-300">
+                            {sug.reason}
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-dark-muted">
+                          Confianza: {(sug.confidence * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => acceptAISuggestion(sug.id)}
+                        className="p-1 rounded bg-purple-950/40 hover:bg-purple-600 text-purple-400 hover:text-white transition-colors"
+                        title="Aceptar nota y agregar a pista"
+                      >
+                        <Check size={12} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* 3. Real-time Clear Panel */}

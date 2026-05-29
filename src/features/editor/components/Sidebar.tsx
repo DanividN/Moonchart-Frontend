@@ -148,6 +148,18 @@ export const Sidebar: React.FC = () => {
   };
 
   const handleTriggerAI = async () => {
+    Swal.fire({
+      title: 'Función en Desarrollo',
+      text: 'La autogeneración de notas con IA está temporalmente en mantenimiento para esta versión Beta. Pronto estará disponible.',
+      icon: 'info',
+      background: '#09090b',
+      color: '#f4f4f5',
+      confirmButtonColor: '#8b5cf6',
+    });
+    return;
+
+    // TODO: Uncomment when backend is fixed
+    /*
     if (!audioFile) {
       Swal.fire({
         title: 'Falta Archivo Maestro',
@@ -221,6 +233,7 @@ export const Sidebar: React.FC = () => {
         confirmButtonColor: '#8b5cf6',
       });
     }
+    */
   };
 
   const stems = [

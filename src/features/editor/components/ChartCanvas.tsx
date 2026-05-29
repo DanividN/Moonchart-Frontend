@@ -438,9 +438,15 @@ export const ChartCanvas: React.FC = () => {
           return;
         }
 
+        let effectiveType: string | undefined = note.type;
+        if (effectiveType !== 'star_power' && effectiveType !== 'solo') {
+          const insidePhrase = visibleNotes.find(p => (p.type === 'star_power' || p.type === 'solo') && p.duration > 0 && p.id !== note.id && note.tick >= p.tick && note.tick <= p.tick + p.duration);
+          if (insidePhrase) effectiveType = insidePhrase.type;
+        }
+
         // B. Draw Sustain tail if duration > 0
         if (note.duration > 0) {
-          const colorBase = note.type === 'star_power' ? '#eab308' : (note.type === 'solo' ? '#ef4444' : LANE_COLORS[note.lane]);
+          const colorBase = effectiveType === 'star_power' ? '#eab308' : (effectiveType === 'solo' ? '#ef4444' : LANE_COLORS[note.lane]);
           const grad = ctx.createLinearGradient(x, y, x, endY);
           grad.addColorStop(0, colorBase);
           grad.addColorStop(1, 'rgba(24, 24, 27, 0.1)');
@@ -455,7 +461,7 @@ export const ChartCanvas: React.FC = () => {
         }
 
         // C. Draw Premium glossy note jewel
-        const noteColor = note.type === 'star_power' ? '#eab308' : (note.type === 'solo' ? '#ef4444' : LANE_COLORS[note.lane]);
+        const noteColor = effectiveType === 'star_power' ? '#eab308' : (effectiveType === 'solo' ? '#ef4444' : LANE_COLORS[note.lane]);
         
         // Highlight active, hovered or selected notes
         const isHoveredOrDragged = note.id === hoveredNoteId || note.id === draggedMoveNoteId;
@@ -834,6 +840,7 @@ export const ChartCanvas: React.FC = () => {
     if (tick !== null) {
       const visiblePhrases = notes.filter(n => 
         (n.type === 'star_power' || n.type === 'solo') &&
+        n.duration > 0 &&
         n.difficulty === activeDifficulty &&
         n.instrument === activeInstrument
       );
@@ -934,32 +941,6 @@ export const ChartCanvas: React.FC = () => {
             return n;
           });
 
-          // Automatically transform notes within the Star Power box to star_power type!
-          if (phrase.type === 'star_power') {
-            return {
-              notes: updatedNotes.map(n => {
-                if (n.instrument === activeInstrument && n.difficulty === activeDifficulty && n.id !== draggedPhraseId) {
-                  const isInside = n.tick >= nextTick && n.tick <= (nextTick + nextDuration);
-                  if (isInside && n.type !== 'star_power' && n.type !== 'kick_pedal' && n.type !== 'solo') {
-                    return { ...n, type: 'star_power' };
-                  } else if (!isInside && n.type === 'star_power') {
-                    // Check if it's inside any OTHER star power phrase
-                    const insideOther = updatedNotes.some(other => 
-                      other.type === 'star_power' && 
-                      other.id !== draggedPhraseId && 
-                      n.tick >= other.tick && 
-                      n.tick <= (other.tick + other.duration)
-                    );
-                    if (!insideOther) {
-                      return { ...n, type: 'strum' }; // Revert to standard strum note
-                    }
-                  }
-                }
-                return n;
-              })
-            };
-          }
-
           return { notes: updatedNotes };
         });
       }
@@ -1033,6 +1014,12 @@ export const ChartCanvas: React.FC = () => {
     if (clickedNoteJewel) {
       pushHistory();
       
+      // Right-click on a note: Drag to sustain instead of move
+      if (e.button === 2) {
+        setDraggedNoteId(clickedNoteJewel.id);
+        return;
+      }
+      
       const isCurrentlySelected = selectedNoteIds.has(clickedNoteJewel.id);
       
       let nextSelection = new Set(selectedNoteIds);
@@ -1104,7 +1091,7 @@ export const ChartCanvas: React.FC = () => {
       if (clickedNote) {
         pushHistory();
         setDraggedNoteId(clickedNote.id);
-      } else {
+      } else if (e.button !== 2) {
         // Place new note
         const isPhrase = activeNoteType === 'star_power' || activeNoteType === 'solo';
         let targetLane = activeNoteType === 'open' ? 7 : hoveredLane;
@@ -1128,28 +1115,6 @@ export const ChartCanvas: React.FC = () => {
           setDraggedNoteId(newNote.id);
         }
 
-        // If placing a new star power phrase, immediately transform any underlying notes!
-        if (activeNoteType === 'star_power') {
-          setTimeout(() => {
-            useChartStore.setState((state) => {
-              const latestPhrase = state.notes.find(n => n.type === 'star_power' && n.tick === hoveredTick);
-              if (latestPhrase) {
-                return {
-                  notes: state.notes.map(n => {
-                    if (n.instrument === activeInstrument && n.difficulty === activeDifficulty && n.id !== latestPhrase.id) {
-                      const isInside = n.tick >= latestPhrase.tick && n.tick <= (latestPhrase.tick + latestPhrase.duration);
-                      if (isInside && n.type !== 'star_power' && n.type !== 'kick_pedal' && n.type !== 'solo') {
-                        return { ...n, type: 'star_power' };
-                      }
-                    }
-                    return n;
-                  })
-                };
-              }
-              return {};
-            });
-          }, 50);
-        }
       }
     } else if (selectedTool === 'eraser') {
       // Find note under cursor
@@ -1163,25 +1128,6 @@ export const ChartCanvas: React.FC = () => {
       if (noteToDelete) {
         removeNote(noteToDelete.id);
         
-        // If deleting a Star Power phrase, revert any nested notes
-        if (noteToDelete.type === 'star_power') {
-          useChartStore.setState((state) => ({
-            notes: state.notes.map(n => {
-              if (n.instrument === activeInstrument && n.difficulty === activeDifficulty && n.type === 'star_power') {
-                const stillInsideAny = state.notes.some(other => 
-                  other.type === 'star_power' && 
-                  other.id !== noteToDelete.id && 
-                  n.tick >= other.tick && 
-                  n.tick <= (other.tick + other.duration)
-                );
-                if (!stillInsideAny && n.id !== noteToDelete.id) {
-                  return { ...n, type: 'strum' };
-                }
-              }
-              return n;
-            })
-          }));
-        }
       }
     }
   };
@@ -1265,6 +1211,7 @@ export const ChartCanvas: React.FC = () => {
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
         onDoubleClick={handleDoubleClick}
+        onContextMenu={(e) => e.preventDefault()}
         className="block w-full h-full"
         style={{ 
           cursor: draggedMoveNoteId 

@@ -7,7 +7,6 @@ import { KeyboardLegend } from './features/editor/components/KeyboardLegend';
 import { useChartStore } from './store/useChartStore';
 import { Disc, Music4, Cpu, Cloud, Upload, Download } from 'lucide-react';
 import { MetadataModal } from './features/editor/components/MetadataModal';
-import { APIClient } from './core/api';
 import Swal from 'sweetalert2';
 
 const App: React.FC = () => {
@@ -18,8 +17,7 @@ const App: React.FC = () => {
     bpm, 
     songName, 
     audioFile, 
-    metadata, 
-    processingJobId, 
+    metadata,
     setAudioFile,
     coverFile,
     videoFile
@@ -231,22 +229,6 @@ loading_phrase = Created in Mooncharts Pro!
       // 3. Dynamic audio embed: Fetch high-fidelity song.ogg from backend if processed, else fall back to local file
       let audioData: ArrayBuffer | null = null;
       let isOgg = false;
-
-      if (processingJobId && !processingJobId.startsWith('mock') && !processingJobId.startsWith('api-')) {
-        try {
-          const token = await APIClient.authenticate();
-          const response = await fetch(`http://localhost:8000/api/v1/audio/download/stem/${processingJobId}/song`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          if (response.ok) {
-            audioData = await response.arrayBuffer();
-            isOgg = true;
-            console.log("Successfully fetched song.ogg from backend Celery MSS output!");
-          }
-        } catch (err) {
-          console.warn("FastAPI offline or failed to fetch song.ogg, falling back to original upload.", err);
-        }
-      }
 
       if (!isOgg && audioFile) {
         audioData = await audioFile.arrayBuffer();

@@ -1,11 +1,9 @@
 import React from 'react';
-import { useChartStore, Note, AISuggestion } from '../../../store/useChartStore';
+import { useChartStore, Note } from '../../../store/useChartStore';
 import { 
-  Sliders, Cpu, Sparkles, AlertTriangle, CheckCircle, 
+  Sliders, Cpu, Sparkles,
   Volume2, Activity, Trash2, Check, RefreshCw 
 } from 'lucide-react';
-import { APIClient } from '../../../core/api';
-import { audioEngine } from '../../../core/audio/audioEngine';
 import Swal from 'sweetalert2';
 
 export const Sidebar: React.FC = () => {
@@ -18,14 +16,8 @@ export const Sidebar: React.FC = () => {
     backingVolume,
     processingStatus,
     aiSuggestions,
-    validationWarnings,
-    audioFile,
     activeInstrument,
-    activeDifficulty,
     setStemVolume,
-    setProcessingJob,
-    setSuggestions,
-    setWarnings,
     acceptAllSuggestions,
     acceptAISuggestion,
     clearNotes,
@@ -245,23 +237,7 @@ export const Sidebar: React.FC = () => {
     { id: 'backing', label: 'Acompañamiento', vol: backingVolume },
   ] as const;
 
-  // Dynamically filter validation warnings based on the selected activeInstrument
-  const filteredWarnings = validationWarnings.filter(warn => {
-    const msg = warn.message.toLowerCase();
-    if (activeInstrument === 'guitar') {
-      return !msg.includes('batería') && !msg.includes('bajo') && !msg.includes('bombo') && !msg.includes('redoble');
-    }
-    if (activeInstrument === 'bass') {
-      return !msg.includes('batería') && !msg.includes('guitarra') && !msg.includes('bombo') && !msg.includes('redoble');
-    }
-    if (activeInstrument === 'drums') {
-      return !msg.includes('guitarra') && !msg.includes('bajo') && !msg.includes('vocal');
-    }
-    if (activeInstrument === 'vocals') {
-      return msg.includes('voz') || msg.includes('lírica') || msg.includes('sección') || msg.includes('solo') || (!msg.includes('batería') && !msg.includes('guitarra') && !msg.includes('bajo'));
-    }
-    return true;
-  });
+
 
   return (
     <div className="w-80 bg-dark-panel border-l border-dark-border flex flex-col h-full shrink-0 z-10 overflow-y-auto">
@@ -405,19 +381,17 @@ export const Sidebar: React.FC = () => {
             {/* Trigger analysis button */}
             <button
               onClick={handleTriggerAI}
-              disabled={processingStatus === 'processing' || (!stemFile && activeInstrument !== 'vocals')}
+              disabled={processingStatus === 'processing' || !stemFile}
               className={`w-full py-2 px-3 rounded-lg flex items-center justify-center gap-2 text-xs font-bold transition-all ${
                 processingStatus === 'processing'
                   ? 'bg-purple-950/40 border border-purple-800 text-purple-400 cursor-not-allowed'
-                  : (!stemFile && activeInstrument !== 'vocals')
+                  : !stemFile
                     ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700/50'
                     : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-600/10 active:scale-[0.98]'
               }`}
             >
               <Sparkles size={14} />
-              {processingStatus === 'processing' 
-                ? (activeInstrument === 'vocals' ? 'Sincronizando lírica...' : 'Analizando audio...') 
-                : (activeInstrument === 'vocals' ? 'Autogenerar Lírica con IA' : 'Autogenerar Notas con IA')}
+              {processingStatus === 'processing' ? 'Analizando audio...' : 'Autogenerar Notas con IA'}
             </button>
 
             {/* AI Recommendations Dashboard */}

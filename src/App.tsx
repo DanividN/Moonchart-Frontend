@@ -5,7 +5,7 @@ import { ChartCanvas } from './features/editor/components/ChartCanvas';
 import { NoteTypePalette } from './features/editor/components/NoteTypePalette';
 import { KeyboardLegend } from './features/editor/components/KeyboardLegend';
 import { useChartStore } from './store/useChartStore';
-import { Disc, Music4, Cpu, Cloud, Upload, Download, Save, FolderOpen } from 'lucide-react';
+import { Disc, Music4, Upload, Download, Save, FolderOpen } from 'lucide-react';
 import { MetadataModal } from './features/editor/components/MetadataModal';
 import Swal from 'sweetalert2';
 import { exportToMidiFile } from './core/midi/midiExporter';

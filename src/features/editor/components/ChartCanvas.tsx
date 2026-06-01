@@ -265,15 +265,15 @@ export const ChartCanvas: React.FC = () => {
         if (Math.min(y, endY) > height + 50 || Math.max(y, endY) < -50) return;
 
         if (note.type === 'star_power') {
-          // pulsing gold/electric blue glow
+          // pulsing white glow
           const pulse = 0.12 + 0.05 * Math.sin(Date.now() / 250);
-          ctx.fillStyle = `rgba(234, 179, 8, ${pulse})`;
+          ctx.fillStyle = `rgba(255, 255, 255, ${pulse})`;
           ctx.fillRect(startX, endY, totalHighwayWidth, y - endY);
-          ctx.strokeStyle = '#eab308';
+          ctx.strokeStyle = '#ffffff';
           ctx.lineWidth = 1.5;
           ctx.strokeRect(startX, endY, totalHighwayWidth, y - endY);
           
-          ctx.fillStyle = '#eab308';
+          ctx.fillStyle = '#ffffff';
           ctx.font = 'bold 10px "JetBrains Mono", sans-serif';
           ctx.textAlign = 'left';
           ctx.fillText('⚡ STAR POWER ⚡', startX + 10, y - 8);
@@ -446,7 +446,7 @@ export const ChartCanvas: React.FC = () => {
 
         // B. Draw Sustain tail if duration > 0
         if (note.duration > 0) {
-          const colorBase = effectiveType === 'star_power' ? '#eab308' : (effectiveType === 'solo' ? '#ef4444' : LANE_COLORS[note.lane]);
+          const colorBase = effectiveType === 'star_power' ? '#ffffff' : (effectiveType === 'solo' ? '#ef4444' : LANE_COLORS[note.lane]);
           const grad = ctx.createLinearGradient(x, y, x, endY);
           grad.addColorStop(0, colorBase);
           grad.addColorStop(1, 'rgba(24, 24, 27, 0.1)');
@@ -461,7 +461,7 @@ export const ChartCanvas: React.FC = () => {
         }
 
         // C. Draw Premium glossy note jewel
-        const noteColor = effectiveType === 'star_power' ? '#eab308' : (effectiveType === 'solo' ? '#ef4444' : LANE_COLORS[note.lane]);
+        const noteColor = effectiveType === 'star_power' ? '#ffffff' : (effectiveType === 'solo' ? '#ef4444' : LANE_COLORS[note.lane]);
         
         // Highlight active, hovered or selected notes
         const isHoveredOrDragged = note.id === hoveredNoteId || note.id === draggedMoveNoteId;
@@ -610,7 +610,7 @@ export const ChartCanvas: React.FC = () => {
           note.tick <= (phrase.tick + phrase.duration)
         );
 
-        ctx.fillStyle = isNoteInStarPower ? '#eab308' : (note.type === 'star_power' ? '#eab308' : (note.type === 'solo' ? '#ef4444' : LANE_COLORS[note.lane]));
+        ctx.fillStyle = isNoteInStarPower ? '#ffffff' : (note.type === 'star_power' ? '#ffffff' : (note.type === 'solo' ? '#ef4444' : LANE_COLORS[note.lane]));
         ctx.fillRect(noteMinimapX, noteMinimapY - 1, 8, 2);
       });
 

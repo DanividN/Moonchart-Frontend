@@ -28,6 +28,10 @@ export const ChartCanvas: React.FC = () => {
     pushHistory,
     activeNoteType,
     updateNoteLyric,
+    setSelectedTool,
+    undo,
+    redo,
+    setZoomY,
   } = useChartStore();
 
   const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
@@ -691,8 +695,14 @@ export const ChartCanvas: React.FC = () => {
         setSelectedNoteIds(new Set());
       }
 
-      // Space / '0': Place Open Note (Lane 7) at the hovered tick or current playhead tick
-      if (e.key === '0' || e.key === ' ') {
+      // Space: Reproducir / Pausar
+      if (e.key === ' ') {
+        e.preventDefault();
+        togglePlay();
+      }
+
+      // '0': Place Open Note (Lane 7) at the hovered tick or current playhead tick
+      if (e.key === '0') {
         e.preventDefault();
         const targetTick = hoveredTick !== null ? hoveredTick : currentTick;
         pushHistory();
@@ -701,6 +711,38 @@ export const ChartCanvas: React.FC = () => {
           lane: 7,
           duration: 0,
         });
+      }
+
+      // 1, 2, 3, 4, 5: Seleccionar Notas Verde, Roja, Amarilla, Azul, Naranja
+      if (['1', '2', '3', '4', '5'].includes(e.key)) {
+        e.preventDefault();
+        const laneIdx = parseInt(e.key) - 1;
+        const targetTick = hoveredTick !== null ? hoveredTick : currentTick;
+        pushHistory();
+        addNote({
+          tick: targetTick,
+          lane: laneIdx,
+          duration: 0,
+        });
+      }
+
+      // Q, W, E: Herramientas
+      if (!e.ctrlKey) {
+        if (e.key.toLowerCase() === 'q') setSelectedTool('select');
+        if (e.key.toLowerCase() === 'w') setSelectedTool('pencil');
+        if (e.key.toLowerCase() === 'e') setSelectedTool('eraser');
+      }
+
+      // Ctrl + Z: Deshacer
+      if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        undo();
+      }
+
+      // Ctrl + Y: Rehacer
+      if (e.ctrlKey && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        redo();
       }
     };
     
@@ -1013,6 +1055,11 @@ export const ChartCanvas: React.FC = () => {
 
     if (clickedNoteJewel) {
       pushHistory();
+
+      if (selectedTool === 'eraser') {
+        removeNote(clickedNoteJewel.id);
+        return;
+      }
       
       // Right-click on a note: Drag to sustain instead of move
       if (e.button === 2) {
@@ -1149,15 +1196,22 @@ export const ChartCanvas: React.FC = () => {
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
     if (isPlaying) {
       togglePlay(); // Pause playback on manual scroll
     }
-    const ticksPerInterval = ticksPerBeat / (quantization / 4);
-    const scrollDirection = e.deltaY > 0 ? -1 : 1;
-    const multiplier = e.shiftKey ? 4 : 1;
-    const nextTick = currentTick + (scrollDirection * ticksPerInterval * multiplier);
-    setCurrentTick(Math.max(0, nextTick));
+
+    if (e.shiftKey) {
+      // Zoom horizontal en el Timeline (En nuestro caso vertical por la orientación del highway)
+      const zoomStep = e.deltaY > 0 ? -0.05 : 0.05;
+      const newZoomY = Math.max(0.1, Math.min(3.0, zoomY + zoomStep));
+      setZoomY(newZoomY);
+    } else {
+      // Navegar hacia arriba/abajo en el Timeline
+      const ticksPerInterval = ticksPerBeat / (quantization / 4);
+      const scrollDirection = e.deltaY > 0 ? -1 : 1;
+      const nextTick = currentTick + (scrollDirection * ticksPerInterval);
+      setCurrentTick(Math.max(0, nextTick));
+    }
   };
 
   const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {

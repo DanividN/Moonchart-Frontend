@@ -137,6 +137,10 @@ interface ChartState {
   setWarnings: (warnings: ValidationWarning[]) => void;
   acceptAISuggestion: (id: string) => void;
   acceptAllSuggestions: () => void;
+  
+  // Project Save/Load
+  exportProject: () => string;
+  loadProject: (jsonStr: string) => boolean;
 }
 
 export const useChartStore = create<ChartState>((set, get) => ({
@@ -436,5 +440,59 @@ export const useChartStore = create<ChartState>((set, get) => ({
       notes: mergedNotes,
       aiSuggestions: [] // Clear recommendations
     });
+  },
+
+  // --- Project Save/Load ---
+  exportProject: () => {
+    const state = get();
+    // We explicitly extract what we want to save
+    const projectData = {
+      version: '1.0',
+      notes: state.notes,
+      bpm: state.bpm,
+      ticksPerBeat: state.ticksPerBeat,
+      songName: state.songName,
+      metadata: state.metadata,
+      quantization: state.quantization,
+      activeInstrument: state.activeInstrument,
+      activeDifficulty: state.activeDifficulty,
+      validationWarnings: state.validationWarnings,
+      aiSuggestions: state.aiSuggestions,
+      lyricsText: state.lyricsText
+    };
+    return JSON.stringify(projectData, null, 2);
+  },
+  
+  loadProject: (jsonStr: string) => {
+    try {
+      const parsed = JSON.parse(jsonStr);
+      if (!parsed.notes || !parsed.metadata) {
+        console.error("Invalid project file");
+        return false;
+      }
+      
+      set({
+        notes: parsed.notes,
+        bpm: parsed.bpm || 120,
+        ticksPerBeat: parsed.ticksPerBeat || 192,
+        songName: parsed.songName || 'demo_song.wav',
+        metadata: parsed.metadata,
+        quantization: parsed.quantization || 16,
+        activeInstrument: parsed.activeInstrument || 'guitar',
+        activeDifficulty: parsed.activeDifficulty || 'expert',
+        validationWarnings: parsed.validationWarnings || [],
+        aiSuggestions: parsed.aiSuggestions || [],
+        lyricsText: parsed.lyricsText || '',
+        // Reset volatile state
+        historyPast: [],
+        historyFuture: [],
+        isPlaying: false,
+        currentTick: 0
+      });
+      return true;
+    } catch (err) {
+      console.error("Failed to parse project file", err);
+      return false;
+    }
   }
 }));

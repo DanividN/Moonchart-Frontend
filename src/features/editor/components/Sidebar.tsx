@@ -5,6 +5,8 @@ import {
   Volume2, Activity, Trash2, Check, RefreshCw 
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { APIClient } from '../../../core/api';
+import { audioEngine } from '../../../core/audio/audioEngine';
 
 export const Sidebar: React.FC = () => {
   const {
@@ -22,7 +24,10 @@ export const Sidebar: React.FC = () => {
     acceptAISuggestion,
     clearNotes,
     lyricsText,
-    setLyricsText
+    setLyricsText,
+    setProcessingJob,
+    setSuggestions,
+    setWarnings
   } = useChartStore();
 
   const [lyricsMode, setLyricsMode] = React.useState<'simple' | 'timestamped'>('simple');
@@ -140,18 +145,21 @@ export const Sidebar: React.FC = () => {
   };
 
   const handleTriggerAI = async () => {
-    Swal.fire({
-      title: 'Función en Desarrollo',
-      text: 'La autogeneración de notas con IA está temporalmente en mantenimiento para esta versión Beta. Pronto estará disponible.',
-      icon: 'info',
-      background: '#09090b',
-      color: '#f4f4f5',
-      confirmButtonColor: '#8b5cf6',
-    });
-    return;
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    
+    if (!isLocal) {
+      Swal.fire({
+        title: 'Función en Desarrollo',
+        text: 'La autogeneración de notas con IA está temporalmente en mantenimiento para esta versión Beta. Pronto estará disponible.',
+        icon: 'info',
+        background: '#09090b',
+        color: '#f4f4f5',
+        confirmButtonColor: '#8b5cf6',
+      });
+      return;
+    }
 
-    // TODO: Uncomment when backend is fixed
-    /*
+    const { audioFile } = useChartStore.getState();
     if (!audioFile) {
       Swal.fire({
         title: 'Falta Archivo Maestro',
@@ -215,7 +223,7 @@ export const Sidebar: React.FC = () => {
     } catch (err) {
       console.warn("Connection to FastAPI failed.", err);
       // Clean error state so user knows it failed
-      setProcessingJob(null, 'idle');
+      setProcessingJob('api-job', 'failed');
       Swal.fire({
         title: 'Error de Servidor',
         text: 'Fallo la conexión con el Backend de IA o la autenticación. Revisa que FastAPI esté corriendo (uvicorn app.main:app) y que no haya errores de CORS.',
@@ -225,7 +233,6 @@ export const Sidebar: React.FC = () => {
         confirmButtonColor: '#8b5cf6',
       });
     }
-    */
   };
 
   const stems = [

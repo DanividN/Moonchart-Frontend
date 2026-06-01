@@ -17,7 +17,7 @@ interface MetadataModalProps {
     diff_drums: number;
     diff_vocals: number;
     diff_band: number;
-  }) => void;
+  }, exportFormat: 'chart' | 'mid') => void;
 }
 
 export const MetadataModal: React.FC<MetadataModalProps> = ({ isOpen, onClose, onConfirmExport }) => {
@@ -55,6 +55,8 @@ export const MetadataModal: React.FC<MetadataModalProps> = ({ isOpen, onClose, o
   const [diffDrums, setDiffDrums] = useState(metadata.diff_drums);
   const [diffVocals, setDiffVocals] = useState(metadata.diff_vocals);
   const [diffBand, setDiffBand] = useState(metadata.diff_band);
+  
+  const [exportFormat, setExportFormat] = useState<'chart' | 'mid'>('chart');
 
   if (!isOpen) return null;
 
@@ -77,7 +79,7 @@ export const MetadataModal: React.FC<MetadataModalProps> = ({ isOpen, onClose, o
     updateMetadata(updatedMeta);
 
     // 2. Trigger the ZIP export callback passing the fresh metadata directly to prevent Zustand state lag!
-    onConfirmExport(updatedMeta);
+    onConfirmExport(updatedMeta, exportFormat);
     onClose();
   };
 
@@ -307,6 +309,33 @@ export const MetadataModal: React.FC<MetadataModalProps> = ({ isOpen, onClose, o
                   <br />
                   <span className="text-amber-500 font-bold">⚠️ Nota:</span> Archivos grandes incrementarán el tamaño de descarga del archivo .zip.
                 </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 4: Formato de Exportación */}
+          <div className="space-y-4 pt-2">
+            <h3 className="text-xs font-bold text-purple-400 uppercase tracking-wider border-b border-dark-border/40 pb-1 flex items-center gap-1.5 font-mono">
+              <Award size={13} /> Formato de Exportación
+            </h3>
+            
+            <div className="bg-zinc-900/30 p-4 rounded-xl border border-dark-border/50 flex flex-col gap-3">
+              <span className="text-[10px] font-bold text-dark-muted uppercase">Selecciona el formato objetivo</span>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${exportFormat === 'chart' ? 'border-purple-500 bg-purple-500/20' : 'border-zinc-700 bg-zinc-900 group-hover:border-zinc-500'}`}>
+                    {exportFormat === 'chart' && <div className="w-2 h-2 rounded-full bg-purple-500"></div>}
+                  </div>
+                  <input type="radio" className="hidden" checked={exportFormat === 'chart'} onChange={() => setExportFormat('chart')} />
+                  <span className={`text-xs font-bold ${exportFormat === 'chart' ? 'text-zinc-200' : 'text-zinc-500 group-hover:text-zinc-400'}`}>.chart (Clone Hero)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${exportFormat === 'mid' ? 'border-purple-500 bg-purple-500/20' : 'border-zinc-700 bg-zinc-900 group-hover:border-zinc-500'}`}>
+                    {exportFormat === 'mid' && <div className="w-2 h-2 rounded-full bg-purple-500"></div>}
+                  </div>
+                  <input type="radio" className="hidden" checked={exportFormat === 'mid'} onChange={() => setExportFormat('mid')} />
+                  <span className={`text-xs font-bold ${exportFormat === 'mid' ? 'text-zinc-200' : 'text-zinc-500 group-hover:text-zinc-400'}`}>.mid (Rockband / Magma)</span>
+                </label>
               </div>
             </div>
           </div>

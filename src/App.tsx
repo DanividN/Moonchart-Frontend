@@ -5,9 +5,10 @@ import { ChartCanvas } from './features/editor/components/ChartCanvas';
 import { NoteTypePalette } from './features/editor/components/NoteTypePalette';
 import { KeyboardLegend } from './features/editor/components/KeyboardLegend';
 import { useChartStore } from './store/useChartStore';
-import { Disc, Music4, Cpu, Cloud, Upload, Download } from 'lucide-react';
+import { Disc, Music4, Cpu, Cloud, Upload, Download, Save, FolderOpen } from 'lucide-react';
 import { MetadataModal } from './features/editor/components/MetadataModal';
 import Swal from 'sweetalert2';
+import { exportToMidiFile } from './core/midi/midiExporter';
 
 const App: React.FC = () => {
   const { 
@@ -26,12 +27,61 @@ const App: React.FC = () => {
   const [isMetadataOpen, setIsMetadataOpen] = useState(false);
   const currentChartNotes = notes.filter(n => n.instrument === activeInstrument && n.difficulty === activeDifficulty);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const projectInputRef = useRef<HTMLInputElement>(null);
 
   const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setAudioFile(file);
     }
+  };
+
+  const handleProjectLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const jsonStr = event.target?.result as string;
+        if (jsonStr) {
+          const success = useChartStore.getState().loadProject(jsonStr);
+          if (success) {
+            Swal.fire({
+              title: 'Proyecto Cargado',
+              text: 'Se ha restaurado el proyecto exitosamente.',
+              icon: 'success',
+              background: '#09090b',
+              color: '#f4f4f5',
+              confirmButtonColor: '#8b5cf6',
+              timer: 2000,
+              showConfirmButton: false
+            });
+          } else {
+            Swal.fire({
+              title: 'Error',
+              text: 'El archivo de proyecto es inválido o está corrupto.',
+              icon: 'error',
+              background: '#09090b',
+              color: '#f4f4f5',
+              confirmButtonColor: '#8b5cf6',
+            });
+          }
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handleSaveProject = () => {
+    const jsonStr = useChartStore.getState().exportProject();
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${metadata.name.replace(/\s+/g, '_')}_project.moonproject`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const exportToChartFile = (notesList: any[], beatsPerMin: number, activeMeta: typeof metadata, resolution: number = 192) => {
@@ -144,15 +194,20 @@ const App: React.FC = () => {
     return output;
   };
 
-  const handleExportChart = async (customMeta?: typeof metadata) => {
+  const handleExportChart = async (customMeta?: typeof metadata, exportFormat: 'chart' | 'mid' = 'chart') => {
     try {
       const activeMeta = customMeta || metadata;
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
 
-      // 1. Generate notes.chart
-      const chartContent = exportToChartFile(notes, bpm, activeMeta);
-      zip.file("notes.chart", chartContent);
+      // 1. Generate notes file (chart or mid)
+      if (exportFormat === 'chart') {
+        const chartContent = exportToChartFile(notes, bpm, activeMeta);
+        zip.file("notes.chart", chartContent);
+      } else {
+        const midiContent = exportToMidiFile(notes, bpm, activeMeta);
+        zip.file("notes.mid", midiContent);
+      }
 
       // 2. Generate song.ini metadata file using customized fields
       const maxTick = notes.length > 0 ? Math.max(...notes.map(n => n.tick)) : 1000;
@@ -294,6 +349,34 @@ loading_phrase = Created in Mooncharts Pro!
 
         {/* Load & Export Actions */}
         <div className="flex items-center gap-2.5">
+          {/* Project Load / Save */}
+          <input 
+            type="file" 
+            ref={projectInputRef} 
+            onChange={handleProjectLoad} 
+            accept=".moonproject,.json" 
+            className="hidden" 
+          />
+          <button
+            onClick={() => projectInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-dark-border text-[11px] font-bold text-zinc-300 hover:text-white transition-all active:scale-95 cursor-pointer"
+            title="Cargar Proyecto Naitvo (.moonproject)"
+          >
+            <FolderOpen size={13} className="text-amber-400" />
+            <span>Cargar Proyecto</span>
+          </button>
+
+          <button
+            onClick={handleSaveProject}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-dark-border text-[11px] font-bold text-zinc-300 hover:text-white transition-all active:scale-95 cursor-pointer"
+            title="Guardar Proyecto para editarlo luego"
+          >
+            <Save size={13} className="text-indigo-400" />
+            <span>Guardar Proyecto</span>
+          </button>
+
+          <div className="w-px h-5 bg-dark-border mx-1"></div>
+
           <input 
             type="file" 
             ref={fileInputRef} 
@@ -320,15 +403,7 @@ loading_phrase = Created in Mooncharts Pro!
           </button>
         </div>
 
-        {/* API connection state */}
-        <div className="flex items-center gap-2 text-xs">
-          <div className="flex items-center gap-1.5 text-emerald-400 bg-emerald-950/20 border border-emerald-900/40 px-2 py-0.5 rounded-md font-semibold text-[10px]">
-            <Cloud size={11} /> Conectado a FastAPI (Port 8000)
-          </div>
-          <div className="flex items-center gap-1.5 text-purple-400 bg-purple-950/20 border border-purple-900/40 px-2 py-0.5 rounded-md font-semibold text-[10px]">
-            <Cpu size={11} /> Madmom/Demucs Pipeline Ready
-          </div>
-        </div>
+
       </header>
 
       {/* Editor Main Area */}

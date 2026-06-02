@@ -169,8 +169,11 @@ export const Toolbar: React.FC = () => {
         >
           <option value="4">1/4 Nota</option>
           <option value="8">1/8 Nota</option>
+          <option value="12">1/12 Nota</option>
           <option value="16">1/16 Nota</option>
+          <option value="24">1/24 Nota</option>
           <option value="32">1/32 Nota</option>
+          <option value="48">1/48 Nota</option>
           <option value="64">1/64 Nota</option>
         </select>
 

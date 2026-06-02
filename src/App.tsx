@@ -9,6 +9,7 @@ import { Disc, Music4, Upload, Download, Save, FolderOpen } from 'lucide-react';
 import { MetadataModal } from './features/editor/components/MetadataModal';
 import Swal from 'sweetalert2';
 import { exportToMidiFile } from './core/midi/midiExporter';
+import { parseChartFile } from './core/parser/chartParser';
 
 const App: React.FC = () => {
   const { 
@@ -28,6 +29,7 @@ const App: React.FC = () => {
   const currentChartNotes = notes.filter(n => n.instrument === activeInstrument && n.difficulty === activeDifficulty);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
+  const chartInputRef = useRef<HTMLInputElement>(null);
 
   const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -82,6 +84,48 @@ const App: React.FC = () => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const handleChartImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      Swal.fire({
+        title: '¿Importar Chart?',
+        text: 'Esto reemplazará todas las notas y metadatos actuales del proyecto. ¿Estás seguro?',
+        icon: 'warning',
+        showCancelButton: true,
+        background: '#09090b',
+        color: '#f4f4f5',
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#3f3f46',
+        confirmButtonText: 'Sí, reemplazar',
+        cancelButtonText: 'Cancelar'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const content = event.target?.result as string;
+            if (content) {
+              const parsed = parseChartFile(content);
+              useChartStore.getState().importChartData(parsed);
+              Swal.fire({
+                title: 'Importado',
+                text: 'El archivo .chart se ha importado con éxito.',
+                icon: 'success',
+                background: '#09090b',
+                color: '#f4f4f5',
+                confirmButtonColor: '#8b5cf6',
+                timer: 2000,
+                showConfirmButton: false
+              });
+            }
+          };
+          reader.readAsText(file);
+        }
+      });
+      // Clear the input so the same file can be selected again
+      if (chartInputRef.current) chartInputRef.current.value = '';
+    }
   };
 
   const exportToChartFile = (notesList: any[], beatsPerMin: number, activeMeta: typeof metadata, resolution: number = 192) => {
@@ -373,6 +417,24 @@ loading_phrase = Created in Mooncharts Pro!
           >
             <Save size={13} className="text-indigo-400" />
             <span>Guardar Proyecto</span>
+          </button>
+
+          <div className="w-px h-5 bg-dark-border mx-1"></div>
+
+          <input 
+            type="file" 
+            ref={chartInputRef} 
+            onChange={handleChartImport} 
+            accept=".chart" 
+            className="hidden" 
+          />
+          <button
+            onClick={() => chartInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-dark-border text-[11px] font-bold text-zinc-300 hover:text-white transition-all active:scale-95 cursor-pointer"
+            title="Importar archivo .chart"
+          >
+            <FolderOpen size={13} className="text-emerald-400" />
+            <span>Importar .chart</span>
           </button>
 
           <div className="w-px h-5 bg-dark-border mx-1"></div>

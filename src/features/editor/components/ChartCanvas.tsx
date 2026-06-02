@@ -209,17 +209,35 @@ export const ChartCanvas: React.FC = () => {
         ctx.stroke();
       }
 
-      // 5. Render Waveform mock visualization
-      // Waveform is projected in the background on the center of the board
-      ctx.fillStyle = 'rgba(59, 130, 246, 0.04)'; // Light blue glow
-      ctx.strokeStyle = 'rgba(59, 130, 246, 0.1)';
+      // 5. Render Waveform real or mock visualization
+      ctx.strokeStyle = 'rgba(59, 130, 246, 0.15)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
+      
+      const waveformPeaks = audioEngine.getWaveformData();
+      const audioDuration = audioEngine.getDuration();
+      const hasRealWaveform = waveformPeaks && waveformPeaks.length > 0 && audioDuration > 0;
+
       for (let y = 0; y < height; y += 4) {
         const t = yToTick(y, height);
-        // Synthesized amplitude matching beat pulses
-        const beatProgress = (t % ticksPerBeat) / ticksPerBeat;
-        const amplitude = (Math.sin(beatProgress * Math.PI) * 40 + Math.random() * 8) * (zoomX * 0.8);
+        let amplitude = 0;
+
+        if (hasRealWaveform) {
+           const timeSecs = t / (ticksPerBeat * (bpm / 60));
+           const fraction = timeSecs / audioDuration;
+           if (fraction >= 0 && fraction <= 1) {
+             const idx = Math.floor(fraction * waveformPeaks.length);
+             if (idx >= 0 && idx < waveformPeaks.length) {
+               const peak = waveformPeaks[idx];
+               // peak.max and peak.min are in [-1, 1]. Diff is max 2.
+               amplitude = ((peak.max - peak.min) * 60) * zoomX;
+             }
+           }
+        } else {
+           // Synthesized amplitude matching beat pulses
+           const beatProgress = (t % ticksPerBeat) / ticksPerBeat;
+           amplitude = (Math.sin(beatProgress * Math.PI) * 40 + Math.random() * 8) * (zoomX * 0.8);
+        }
         
         ctx.moveTo(width / 2 - amplitude, y);
         ctx.lineTo(width / 2 + amplitude, y);

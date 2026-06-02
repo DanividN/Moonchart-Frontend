@@ -28,6 +28,7 @@ class AudioEngine {
   private startTime: number = 0;
   private onTimeUpdateCallback: ((time: number) => void) | null = null;
   private tickerInterval: any = null;
+  private waveformPeaks: { min: number, max: number }[] = [];
 
   constructor() {}
 
@@ -67,6 +68,7 @@ class AudioEngine {
         }
         this.decodedBuffer = await this.ctx!.decodeAudioData(arrayBuffer);
         console.log("Decoded audio successfully for precision transient analysis. Duration:", this.decodedBuffer.duration);
+        this.generateWaveformPeaks();
       } catch (err) {
         console.warn("Could not decode audio buffer for analysis:", err);
       }
@@ -303,6 +305,64 @@ class AudioEngine {
         console.warn(`Could not load stem ${name}:`, err);
       }
     }
+  }
+
+  public async setStemFile(stem: string, file: File) {
+    this.initContext();
+    if (this.ctx && this.ctx.state === 'suspended') {
+      await this.ctx.resume();
+    }
+    const fileReader = new FileReader();
+    fileReader.onload = async () => {
+      try {
+        const arrayBuffer = fileReader.result as ArrayBuffer;
+        const audioBuffer = await this.ctx!.decodeAudioData(arrayBuffer);
+        
+        // Stop currently playing stem if any
+        if (this.stems[stem] && this.stems[stem]!.source) {
+          try { this.stems[stem]!.source!.stop(); } catch(e){}
+        }
+        
+        this.stems[stem] = { buffer: audioBuffer, source: null };
+        console.log(`Loaded custom stem for ${stem}.`);
+        
+        // If we are currently playing, we should start this stem
+        if (this.isPlaying) {
+          const startTimeCtx = this.ctx!.currentTime;
+          const source = this.ctx!.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(this.gains[stem] || this.ctx!.destination);
+          const offset = Math.min(this.currentTime, audioBuffer.duration);
+          source.start(startTimeCtx, offset);
+          this.stems[stem]!.source = source;
+        }
+      } catch (err) {
+        console.warn(`Could not decode custom stem ${stem}:`, err);
+      }
+    };
+    fileReader.readAsArrayBuffer(file);
+  }
+
+  private generateWaveformPeaks() {
+    if (!this.decodedBuffer) return;
+    const channelData = this.decodedBuffer.getChannelData(0);
+    const peaks = [];
+    const step = Math.ceil(channelData.length / 5000); // 5000 points for detail
+    for (let i = 0; i < channelData.length; i += step) {
+      let min = 0;
+      let max = 0;
+      for (let j = 0; j < step && i + j < channelData.length; j++) {
+        const val = channelData[i + j];
+        if (val < min) min = val;
+        if (val > max) max = val;
+      }
+      peaks.push({ min, max });
+    }
+    this.waveformPeaks = peaks;
+  }
+
+  public getWaveformData() {
+    return this.waveformPeaks;
   }
 
   public play() {

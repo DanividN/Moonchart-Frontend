@@ -141,6 +141,8 @@ interface ChartState {
   // Project Save/Load
   exportProject: () => string;
   loadProject: (jsonStr: string) => boolean;
+  importChartData: (data: any) => void;
+  loadStemFile: (stem: string, file: File) => void;
 }
 
 export const useChartStore = create<ChartState>((set, get) => ({
@@ -494,5 +496,21 @@ export const useChartStore = create<ChartState>((set, get) => ({
       console.error("Failed to parse project file", err);
       return false;
     }
+  },
+
+  importChartData: (data: any) => {
+    set({
+      notes: data.notes,
+      bpm: data.bpm,
+      ticksPerBeat: data.resolution,
+      metadata: { ...get().metadata, ...data.metadata },
+      historyPast: [],
+      historyFuture: []
+    });
+  },
+
+  loadStemFile: (stem: string, file: File) => {
+    audioEngine.setStemFile(stem, file);
+    set({ isStemsLoaded: true });
   }
 }));

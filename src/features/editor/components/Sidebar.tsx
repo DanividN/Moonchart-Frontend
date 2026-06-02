@@ -2,7 +2,7 @@ import React from 'react';
 import { useChartStore, Note } from '../../../store/useChartStore';
 import { 
   Sliders, Cpu, Sparkles,
-  Volume2, Activity, Trash2, Check, RefreshCw 
+  Volume2, Activity, Trash2, Check, RefreshCw, Upload 
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { APIClient } from '../../../core/api';
@@ -26,8 +26,8 @@ export const Sidebar: React.FC = () => {
     lyricsText,
     setLyricsText,
     setProcessingJob,
-    setSuggestions,
-    setWarnings
+    setWarnings,
+    loadStemFile
   } = useChartStore();
 
   const [lyricsMode, setLyricsMode] = React.useState<'simple' | 'timestamped'>('simple');
@@ -37,6 +37,13 @@ export const Sidebar: React.FC = () => {
   React.useEffect(() => {
     setStemFile(null);
   }, [activeInstrument]);
+
+  const handleStemUpload = (stemId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      loadStemFile(stemId, file);
+    }
+  };
 
   const handleLyricsFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -260,7 +267,18 @@ export const Sidebar: React.FC = () => {
           {stems.map((stem) => (
             <div key={stem.id} className="space-y-1">
               <div className="flex justify-between items-center text-[11px]">
-                <span className="text-dark-muted font-medium">{stem.label}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-dark-muted font-medium">{stem.label}</span>
+                  <label className="cursor-pointer text-zinc-500 hover:text-blue-400 transition-colors" title={`Subir archivo local para ${stem.label}`}>
+                    <Upload size={10} />
+                    <input 
+                      type="file" 
+                      accept=".mp3,.wav,.ogg" 
+                      className="hidden" 
+                      onChange={(e) => handleStemUpload(stem.id, e)} 
+                    />
+                  </label>
+                </div>
                 <span className="font-mono text-zinc-400">{(stem.vol * 100).toFixed(0)}%</span>
               </div>
               <div className="flex items-center gap-2">

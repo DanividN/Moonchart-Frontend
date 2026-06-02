@@ -27,7 +27,8 @@ export const Sidebar: React.FC = () => {
     setLyricsText,
     setProcessingJob,
     setWarnings,
-    loadStemFile
+    loadStemFile,
+    setSuggestions
   } = useChartStore();
 
   const [lyricsMode, setLyricsMode] = React.useState<'simple' | 'timestamped'>('simple');

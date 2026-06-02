@@ -129,7 +129,8 @@ const App: React.FC = () => {
   };
 
   const exportToChartFile = (notesList: any[], beatsPerMin: number, activeMeta: typeof metadata, resolution: number = 192) => {
-    let output = `[Song]\n{\n  Name = "${activeMeta.name}"\n  Artist = "${activeMeta.artist}"\n  Charter = "${activeMeta.charter}"\n  Album = "${activeMeta.album}"\n  Year = "${activeMeta.year}"\n  Genre = "${activeMeta.genre}"\n  Offset = 0\n  Resolution = ${resolution}\n  Player2 = bass\n  Difficulty = 0\n  PreviewStart = 0\n  PreviewLength = 0\n  SyncTrack = 0\n}\n`;
+    const audioOffset = activeMeta.offset || 0;
+    let output = `[Song]\n{\n  Name = "${activeMeta.name}"\n  Artist = "${activeMeta.artist}"\n  Charter = "${activeMeta.charter}"\n  Album = "${activeMeta.album}"\n  Year = "${activeMeta.year}"\n  Genre = "${activeMeta.genre}"\n  Offset = ${audioOffset}\n  Resolution = ${resolution}\n  Player2 = bass\n  Difficulty = 0\n  PreviewStart = 0\n  PreviewLength = 0\n  SyncTrack = 0\n}\n`;
     output += `[SyncTrack]\n{\n  0 = TS 4\n  0 = B ${beatsPerMin * 1000}\n}\n`;
 
     // 1. Serialize Vocals inside Events track as Clone Hero standard lyrics

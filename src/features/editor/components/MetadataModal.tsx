@@ -17,6 +17,7 @@ interface MetadataModalProps {
     diff_drums: number;
     diff_vocals: number;
     diff_band: number;
+    offset?: number;
   }, exportFormat: 'chart' | 'mid') => void;
 }
 
@@ -55,6 +56,7 @@ export const MetadataModal: React.FC<MetadataModalProps> = ({ isOpen, onClose, o
   const [diffDrums, setDiffDrums] = useState(metadata.diff_drums);
   const [diffVocals, setDiffVocals] = useState(metadata.diff_vocals);
   const [diffBand, setDiffBand] = useState(metadata.diff_band);
+  const [offset, setOffset] = useState(metadata.offset || 0);
   
   const [exportFormat, setExportFormat] = useState<'chart' | 'mid'>('chart');
 
@@ -72,7 +74,8 @@ export const MetadataModal: React.FC<MetadataModalProps> = ({ isOpen, onClose, o
       diff_bass: diffBass,
       diff_drums: diffDrums,
       diff_vocals: diffVocals,
-      diff_band: diffBand
+      diff_band: diffBand,
+      offset
     };
 
     // 1. Update global Zustand state store for future reference
@@ -192,6 +195,21 @@ export const MetadataModal: React.FC<MetadataModalProps> = ({ isOpen, onClose, o
                     onChange={(e) => setGenre(e.target.value)}
                     className="w-full bg-zinc-900 border border-dark-border hover:border-zinc-700 focus:border-purple-600 rounded-lg py-2 pl-9 pr-3 text-xs text-zinc-200 focus:outline-none transition-colors"
                     placeholder="Rock"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-dark-muted uppercase text-emerald-400">Retardo de Audio (Segundos)</label>
+                <div className="relative">
+                  <Calendar size={13} className="absolute left-3 top-2.5 text-emerald-500" />
+                  <input 
+                    type="number" 
+                    step="0.1"
+                    value={offset} 
+                    onChange={(e) => setOffset(parseFloat(e.target.value) || 0)}
+                    className="w-full bg-zinc-900 border border-dark-border hover:border-zinc-700 focus:border-emerald-500 rounded-lg py-2 pl-9 pr-3 text-xs text-zinc-200 focus:outline-none transition-colors"
+                    placeholder="0"
                   />
                 </div>
               </div>

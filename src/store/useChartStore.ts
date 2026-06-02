@@ -83,6 +83,7 @@ interface ChartState {
     diff_drums: number;
     diff_vocals: number;
     diff_band: number;
+    offset?: number;
   };
 
   // --- AI Co-pilot State ---
@@ -162,7 +163,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
     diff_bass: 2,
     diff_drums: 4,
     diff_vocals: 1,
-    diff_band: 3
+    diff_band: 3,
+    offset: 0
   },
   
 
@@ -239,8 +241,15 @@ export const useChartStore = create<ChartState>((set, get) => ({
   togglePlay: () => {
     const isPlaying = !get().isPlaying;
     set({ isPlaying });
+    const state = get();
+    const chartSeconds = state.currentTick / (state.ticksPerBeat * (state.bpm / 60));
+    const audioOffset = state.metadata.offset || 0;
+    
     if (isPlaying) {
-      audioEngine.play();
+      if (chartSeconds >= audioOffset) {
+         audioEngine.seek(chartSeconds - audioOffset);
+         audioEngine.play();
+      }
     } else {
       audioEngine.pause();
     }
@@ -251,11 +260,21 @@ export const useChartStore = create<ChartState>((set, get) => ({
     set({ currentTick: nextTick });
     
     // Synchronize audio playhead
-    const { bpm, ticksPerBeat } = get();
-    const seconds = nextTick / (ticksPerBeat * (bpm / 60));
-    const currentAudioTime = audioEngine.getCurrentTime();
-    if (Math.abs(currentAudioTime - seconds) > 0.08) {
-      audioEngine.seek(seconds);
+    const { bpm, ticksPerBeat, metadata } = get();
+    const chartSeconds = nextTick / (ticksPerBeat * (bpm / 60));
+    const audioOffset = metadata.offset || 0;
+    const targetAudioSeconds = chartSeconds - audioOffset;
+
+    if (targetAudioSeconds >= 0) {
+      const currentAudioTime = audioEngine.getCurrentTime();
+      if (Math.abs(currentAudioTime - targetAudioSeconds) > 0.08) {
+        audioEngine.seek(targetAudioSeconds);
+      }
+    } else {
+      // If we manually seeked backwards into the silent zone, make sure audio stops
+      if (audioEngine.getIsPlaying()) {
+        audioEngine.pause();
+      }
     }
   },
   

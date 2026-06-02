@@ -58,6 +58,11 @@ export const ChartCanvas: React.FC = () => {
   const [hoveredLane, setHoveredLane] = useState<number | null>(null);
   const [hoveredTick, setHoveredTick] = useState<number | null>(null);
 
+  const [isDraggingOffset, setIsDraggingOffset] = useState(false);
+  const [dragOffsetStartY, setDragOffsetStartY] = useState<number | null>(null);
+  const [dragOffsetStartValue, setDragOffsetStartValue] = useState<number>(0);
+  const [isHoveringOffsetHandle, setIsHoveringOffsetHandle] = useState(false);
+
   // Configuration Constants
   const LANE_COUNT = activeInstrument === 'drums' ? 5 : 5; // standard 5-fret/lane layout
   const LANE_WIDTH = 55 * zoomX; 
@@ -217,6 +222,7 @@ export const ChartCanvas: React.FC = () => {
       const waveformPeaks = audioEngine.getWaveformData();
       const audioDuration = audioEngine.getDuration();
       const hasRealWaveform = waveformPeaks && waveformPeaks.length > 0 && audioDuration > 0;
+      const audioOffset = useChartStore.getState().metadata.offset || 0;
 
       for (let y = 0; y < height; y += 4) {
         const t = yToTick(y, height);
@@ -224,7 +230,8 @@ export const ChartCanvas: React.FC = () => {
 
         if (hasRealWaveform) {
            const timeSecs = t / (ticksPerBeat * (bpm / 60));
-           const fraction = timeSecs / audioDuration;
+           const audioTimeSecs = timeSecs - audioOffset;
+           const fraction = audioTimeSecs / audioDuration;
            if (fraction >= 0 && fraction <= 1) {
              const idx = Math.floor(fraction * waveformPeaks.length);
              if (idx >= 0 && idx < waveformPeaks.length) {
@@ -243,6 +250,33 @@ export const ChartCanvas: React.FC = () => {
         ctx.lineTo(width / 2 + amplitude, y);
       }
       ctx.stroke();
+
+      // 5b. Draw Audio Offset Handle (Zero-line marker)
+      const offsetTick = audioOffset * ticksPerBeat * (bpm / 60);
+      const offsetY = tickToY(offsetTick, height);
+      if (offsetY >= 0 && offsetY <= height) {
+        ctx.strokeStyle = isHoveringOffsetHandle || isDraggingOffset ? '#10b981' : 'rgba(16, 185, 129, 0.4)';
+        ctx.lineWidth = isHoveringOffsetHandle || isDraggingOffset ? 3 : 2;
+        ctx.setLineDash([8, 4]);
+        ctx.beginPath();
+        ctx.moveTo(startX, offsetY);
+        ctx.lineTo(startX + totalHighwayWidth, offsetY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Handle Tab
+        const tabW = 200;
+        const tabH = 22;
+        ctx.fillStyle = isHoveringOffsetHandle || isDraggingOffset ? '#10b981' : 'rgba(16, 185, 129, 0.8)';
+        ctx.beginPath();
+        ctx.roundRect(startX + totalHighwayWidth / 2 - tabW / 2, offsetY - tabH / 2, tabW, tabH, 4);
+        ctx.fill();
+
+        ctx.fillStyle = '#09090b';
+        ctx.font = 'bold 10px Inter';
+        ctx.textAlign = 'center';
+        ctx.fillText(`↕ INICIO DEL AUDIO (OFFSET: ${audioOffset.toFixed(2)}s)`, startX + totalHighwayWidth / 2, offsetY + 3);
+      }
 
       // 6. Draw AI suggestions as semi-transparent neon circles
       aiSuggestions.forEach((sug) => {
@@ -681,7 +715,7 @@ export const ChartCanvas: React.FC = () => {
     return () => {
       cancelAnimationFrame(animationId);
     };
-  }, [notes, isPlaying, currentTick, zoomX, zoomY, quantization, hoveredLane, hoveredTick, selectedTool, activeInstrument, activeDifficulty, snapToGrid, aiSuggestions, hoveredNoteId, draggedMoveNoteId, selectedNoteIds, selectionBox, isSelecting, isDraggingSelected]);
+  }, [notes, isPlaying, currentTick, zoomX, zoomY, quantization, hoveredLane, hoveredTick, selectedTool, activeInstrument, activeDifficulty, snapToGrid, aiSuggestions, hoveredNoteId, draggedMoveNoteId, selectedNoteIds, selectionBox, isSelecting, isDraggingSelected, isHoveringOffsetHandle, isDraggingOffset]);
 
   // Selection Key Shortcut Handlers
   useEffect(() => {
@@ -773,30 +807,50 @@ export const ChartCanvas: React.FC = () => {
     if (!isPlaying) return;
 
     const hasAudio = audioEngine.getDuration() > 0;
+    const currentState = useChartStore.getState();
+    const audioOffset = currentState.metadata.offset || 0;
 
     let lastTime = performance.now();
     const interval = setInterval(() => {
+      const now = performance.now();
+      const delta = now - lastTime;
+      lastTime = now;
+
+      const beatsPerSecond = bpm / 60;
+      const ticksPerSecond = beatsPerSecond * ticksPerBeat;
+      
+      const currentTick = useChartStore.getState().currentTick;
+      const nextTickOffline = currentTick + (ticksPerSecond * delta) / 1000;
+      const chartTimeOffline = nextTickOffline / ticksPerSecond;
+
       if (hasAudio) {
-        // High-precision sync with AudioEngine clock
-        const currentTime = audioEngine.getCurrentTime();
-        const calculatedTick = currentTime * ticksPerBeat * (bpm / 60);
-        setCurrentTick(calculatedTick);
+        if (chartTimeOffline < audioOffset) {
+          // We are in the silent offset period before audio starts
+          if (audioEngine.getIsPlaying()) {
+             audioEngine.pause(); // pause until we reach offset
+          }
+          setCurrentTick(nextTickOffline);
+        } else {
+          // Time to play audio!
+          if (!audioEngine.getIsPlaying()) {
+             // We just crossed the threshold, play audio
+             const targetAudioTime = chartTimeOffline - audioOffset;
+             audioEngine.seek(targetAudioTime);
+             audioEngine.play();
+          }
+          // High-precision sync with AudioEngine clock
+          const currentTime = audioEngine.getCurrentTime();
+          const calculatedTick = (currentTime + audioOffset) * ticksPerSecond;
+          setCurrentTick(calculatedTick);
+        }
       } else {
         // Fallback to simulated offline clock
-        const now = performance.now();
-        const delta = now - lastTime;
-        lastTime = now;
-
-        const beatsPerSecond = bpm / 60;
-        const ticksPerSecond = beatsPerSecond * ticksPerBeat;
-        const ticksToAdvance = (ticksPerSecond * delta) / 1000;
-
-        setCurrentTick(currentTick + ticksToAdvance);
+        setCurrentTick(nextTickOffline);
       }
     }, 16);
 
     return () => clearInterval(interval);
-  }, [isPlaying, currentTick, bpm, ticksPerBeat, setCurrentTick]);
+  }, [isPlaying, bpm, ticksPerBeat, setCurrentTick]);
 
   // Mouse Interactions
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -807,6 +861,9 @@ export const ChartCanvas: React.FC = () => {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    const totalHighwayWidth = LANE_COUNT * LANE_WIDTH;
+    const startX = (canvas.width - totalHighwayWidth) / 2;
+
     // 0a. Handle Selection box drag updates
     if (isSelecting && selectionBox) {
       setSelectionBox(box => box ? { ...box, endX: x, endY: y } : null);
@@ -816,8 +873,6 @@ export const ChartCanvas: React.FC = () => {
       const boxY = Math.min(selectionBox.startY, y);
       const boxH = Math.abs(selectionBox.startY - y);
 
-      const totalHighwayWidth = LANE_COUNT * LANE_WIDTH;
-      const startX = (canvas.width - totalHighwayWidth) / 2;
       const visible = notes.filter((n) => n.difficulty === activeDifficulty && n.instrument === activeInstrument);
 
       const newlySelected = new Set<string>();
@@ -849,6 +904,33 @@ export const ChartCanvas: React.FC = () => {
         setSelectedNoteIds(newlySelected);
       }
       return;
+    }
+
+    // Offset visual dragging
+    if (isDraggingOffset && dragOffsetStartY !== null) {
+      const deltaY = e.clientY - rect.top - dragOffsetStartY;
+      const pixelsPerSecond = zoomY * ticksPerBeat * (bpm / 60);
+      const deltaSeconds = deltaY / pixelsPerSecond;
+      
+      const newOffset = Math.max(0, dragOffsetStartValue - deltaSeconds);
+      
+      useChartStore.setState(state => ({
+         metadata: { ...state.metadata, offset: parseFloat(newOffset.toFixed(3)) }
+      }));
+      return;
+    }
+
+    // Check Offset Handle Hover
+    const audioOffset = useChartStore.getState().metadata.offset || 0;
+    const offsetTick = audioOffset * (useChartStore.getState().bpm / 60) * useChartStore.getState().ticksPerBeat;
+    const offsetY = tickToY(offsetTick, canvas.height);
+    
+    if (x >= startX && x <= startX + totalHighwayWidth && Math.abs(y - offsetY) < 15) {
+       setIsHoveringOffsetHandle(true);
+       canvas.style.cursor = 'ns-resize';
+    } else {
+       setIsHoveringOffsetHandle(false);
+       canvas.style.cursor = 'default';
     }
 
     // 0. Handle Minimap dragging
@@ -925,8 +1007,6 @@ export const ChartCanvas: React.FC = () => {
     setHoveredPhraseEdge(foundHoveredEdge);
 
     // 2. Detect Hover over standard Note Jewels for dragging
-    const totalHighwayWidth = LANE_COUNT * LANE_WIDTH;
-    const startX = (canvas.width - totalHighwayWidth) / 2;
     const visibleNotes = notes.filter((n) => n.difficulty === activeDifficulty && n.instrument === activeInstrument);
     
     const foundHoveredNote = visibleNotes.find((note) => {
@@ -1034,6 +1114,9 @@ export const ChartCanvas: React.FC = () => {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    const totalHighwayWidth = LANE_COUNT * LANE_WIDTH;
+    const startX = (canvas.width - totalHighwayWidth) / 2;
+
     // A. Minimap Click & Drag Start (Highest Priority)
     const minimapX = canvas.width - 85;
     const minimapWidth = 70;
@@ -1051,9 +1134,29 @@ export const ChartCanvas: React.FC = () => {
       return;
     }
 
+    // Offset visual dragging (Clicking on the Offset Handle)
+    const audioOffset = useChartStore.getState().metadata.offset || 0;
+    const offsetTick = audioOffset * (useChartStore.getState().bpm / 60) * useChartStore.getState().ticksPerBeat;
+    const offsetY = tickToY(offsetTick, canvas.height);
+
+    if (x >= startX && x <= startX + totalHighwayWidth && Math.abs(y - offsetY) < 15) {
+       setIsDraggingOffset(true);
+       setDragOffsetStartY(e.clientY - rect.top);
+       setDragOffsetStartValue(audioOffset);
+       return;
+    }
+
+    // Legacy: Alt + Click on canvas
+    const waveformPeaks = audioEngine.getWaveformData();
+    const hasRealWaveform = waveformPeaks && waveformPeaks.length > 0;
+    if (e.altKey && hasRealWaveform) {
+       setIsDraggingOffset(true);
+       setDragOffsetStartY(e.clientY - rect.top);
+       setDragOffsetStartValue(useChartStore.getState().metadata.offset || 0);
+       return;
+    }
+
     // B. Click on Note Jewel: Drag/move single or multiple selected notes! (Works anywhere on screen)
-    const totalHighwayWidth = LANE_COUNT * LANE_WIDTH;
-    const startX = (canvas.width - totalHighwayWidth) / 2;
     const visibleNotes = notes.filter((n) => n.difficulty === activeDifficulty && n.instrument === activeInstrument);
     
     const clickedNoteJewel = visibleNotes.find((note) => {
@@ -1203,6 +1306,12 @@ export const ChartCanvas: React.FC = () => {
     setDraggedPhraseEdge(null);
     setIsDraggingMinimap(false);
     setDraggedMoveNoteId(null);
+
+    if (isDraggingOffset) {
+      setIsDraggingOffset(false);
+      setDragOffsetStartY(null);
+      pushHistory();
+    }
 
     // Multi-Selection dragging / box selection cleanups
     setIsSelecting(false);

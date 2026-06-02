@@ -485,6 +485,10 @@ class AudioEngine {
     return this.currentTime;
   }
 
+  public getIsPlaying(): boolean {
+    return this.isPlaying;
+  }
+
   private clearStems() {
     Object.keys(this.stems).forEach(name => {
       const stem = this.stems[name];

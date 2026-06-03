@@ -110,6 +110,7 @@ interface ChartState {
   setAudioFile: (file: File | null) => void;
   setActiveNoteType: (type: 'strum' | 'hopo' | 'tap' | 'open' | 'kick_pedal' | 'star_power' | 'solo') => void;
   setActiveSustainDuration: (dur: number) => void;
+  setBPM: (bpm: number) => void;
   updateNoteDuration: (id: string, duration: number) => void;
   updateMetadata: (meta: Partial<ChartState['metadata']>) => void;
   setLyricsText: (text: string) => void;
@@ -223,6 +224,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
     }
   },
   updateMetadata: (meta) => set((state) => ({ metadata: { ...state.metadata, ...meta } })),
+  setBPM: (bpm) => set({ bpm: Math.max(1, bpm) }),
   setActiveNoteType: (type) => set({ activeNoteType: type }),
   setActiveSustainDuration: (dur) => set({ activeSustainDuration: dur }),
   setCoverFile: (file) => set({ coverFile: file }),

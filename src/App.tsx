@@ -17,6 +17,7 @@ const App: React.FC = () => {
     activeInstrument, 
     activeDifficulty, 
     bpm, 
+    setBPM,
     songName, 
     audioFile, 
     metadata,
@@ -385,7 +386,18 @@ loading_phrase = Created in Mooncharts Pro!
             <span>Pista: <strong className="text-zinc-200">{songName}</strong></span>
           </div>
           <div className="flex items-center gap-1.5 px-2 py-0.8 rounded-full bg-zinc-900 border border-dark-border text-[10px] text-dark-muted">
-            <span>BPM: <strong className="text-zinc-200">{bpm}</strong></span>
+            <label className="flex items-center gap-1 cursor-pointer">
+              <span>BPM:</span>
+              <input
+                type="number"
+                min="1"
+                max="999"
+                value={bpm}
+                onChange={(e) => setBPM(Number(e.target.value))}
+                className="w-10 bg-transparent text-zinc-200 font-bold outline-none border-none p-0 text-[10px] text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:ring-1 focus:ring-indigo-500 rounded px-0.5"
+                title="Cambiar BPM"
+              />
+            </label>
           </div>
           <div className="flex items-center gap-1.5 px-2 py-0.8 rounded-full bg-zinc-900 border border-dark-border text-[10px] text-dark-muted">
             <span>Notas en Pista: <strong className="text-zinc-200">{currentChartNotes.length}</strong></span>

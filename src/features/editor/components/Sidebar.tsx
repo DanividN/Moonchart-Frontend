@@ -1,8 +1,9 @@
 import React from 'react';
 import { useChartStore, Note } from '../../../store/useChartStore';
+import { secondsToTick } from '../../../core/utils/timeUtils';
 import { 
   Sliders, Cpu, Sparkles,
-  Volume2, Activity, Trash2, Check, RefreshCw, Upload 
+  Volume2, Activity, Trash2, Check, RefreshCw, Upload, Clock, X, Plus, Edit2
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { APIClient } from '../../../core/api';
@@ -28,8 +29,14 @@ export const Sidebar: React.FC = () => {
     setProcessingJob,
     setWarnings,
     loadStemFile,
-    setSuggestions
+    setSuggestions,
+    bpms,
+    currentTick,
+    addBPMChange,
+    removeBPMChange
   } = useChartStore();
+
+  const [newBpmInput, setNewBpmInput] = React.useState('120');
 
   const [lyricsMode, setLyricsMode] = React.useState<'simple' | 'timestamped'>('simple');
   const [stemFile, setStemFile] = React.useState<File | null>(null);
@@ -111,8 +118,7 @@ export const Sidebar: React.FC = () => {
       return;
     }
 
-    const { bpm, ticksPerBeat, activeDifficulty, notes, pushHistory } = useChartStore.getState();
-    const ticksPerSecond = ticksPerBeat * (bpm / 60);
+    const { bpms, ticksPerBeat, activeDifficulty, notes, pushHistory } = useChartStore.getState();
 
     pushHistory();
 
@@ -121,7 +127,7 @@ export const Sidebar: React.FC = () => {
 
     const newVocalNotes: Note[] = [];
     parsed.forEach((stanza) => {
-      const startTick = Math.floor(stanza.seconds * ticksPerSecond);
+      const startTick = Math.floor(secondsToTick(stanza.seconds, bpms, ticksPerBeat));
       const words = stanza.text.split(/\s+/).filter(Boolean);
       
       words.forEach((word, idx) => {
@@ -209,8 +215,9 @@ export const Sidebar: React.FC = () => {
       }
 
       // 2. Trigger Celery audio separator and midi analyzer
-      const { bpm } = useChartStore.getState();
-      const jobResponse = await APIClient.triggerAnalysis(activeInstrument, bpm, true); // true = bypass demucs
+      const { bpms } = useChartStore.getState();
+      const initialBpm = bpms[0].bpm;
+      const jobResponse = await APIClient.triggerAnalysis(activeInstrument, initialBpm, true); // true = bypass demucs
       const jobId = jobResponse.id;
 
       // 3. Poll Job status
@@ -255,7 +262,7 @@ export const Sidebar: React.FC = () => {
 
 
   return (
-    <div className="w-80 bg-dark-panel border-l border-dark-border flex flex-col h-full shrink-0 z-10 overflow-y-auto">
+    <div className="w-full sm:w-80 bg-dark-panel border-l border-dark-border flex flex-col h-full shrink-0 z-10 overflow-y-auto">
       
       {/* 1. Stems Sound Mixer */}
       <div className="p-4 border-b border-dark-border">
@@ -296,6 +303,124 @@ export const Sidebar: React.FC = () => {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* 1.5. Tempo Map (BPMs) */}
+      <div className="p-4 border-b border-dark-border">
+        <div className="flex items-center gap-2 mb-3 text-zinc-300 font-semibold text-xs tracking-wider uppercase">
+          <Clock size={14} className="text-emerald-500" />
+          <span>Mapa de Tempo (BPMs)</span>
+        </div>
+
+        <div className="space-y-2 mb-3">
+          <div className="flex gap-2 items-center">
+            <input 
+              type="number" 
+              value={newBpmInput}
+              onChange={(e) => setNewBpmInput(e.target.value)}
+              className="w-full bg-zinc-950 border border-dark-border text-xs rounded px-2 py-1.5 focus:border-emerald-500 outline-none"
+              placeholder="Ej: 125.5"
+            />
+            <button 
+              onClick={() => {
+                const val = parseFloat(newBpmInput);
+                if (!isNaN(val) && val > 0) {
+                  addBPMChange(currentTick, val);
+                }
+              }}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white p-1.5 rounded transition-colors"
+              title="Añadir BPM en el Tick actual"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+          <p className="text-[9px] text-dark-muted">El marcador se añadirá en el tick actual ({currentTick}).</p>
+        </div>
+
+        <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+          {(() => {
+            let activeTick = bpms[0]?.tick || 0;
+            for (let i = 1; i < bpms.length; i++) {
+              if (currentTick >= bpms[i].tick) {
+                activeTick = bpms[i].tick;
+              } else {
+                break;
+              }
+            }
+            return bpms.map((bpmItem) => {
+              const isActive = activeTick === bpmItem.tick;
+              return (
+              <div 
+                key={bpmItem.tick} 
+                className={`flex items-center justify-between border rounded px-2 py-1 text-xs cursor-pointer transition-colors ${
+                  isActive 
+                    ? 'bg-emerald-900/30 border-emerald-500/50 text-white' 
+                    : 'bg-zinc-900 border-dark-border hover:bg-zinc-800'
+                }`}
+                onClick={() => useChartStore.setState({ currentTick: bpmItem.tick })}
+                title="Clic para saltar a este Tick"
+              >
+                <span className={`font-mono text-[10px] ${isActive ? 'text-emerald-300' : 'text-zinc-400'}`}>Tick {bpmItem.tick}</span>
+                <div className="flex items-center gap-2">
+                  <span className={`font-bold ${isActive ? 'text-emerald-400' : 'text-emerald-500/80'}`}>{bpmItem.bpm}</span>
+                  <div className="flex items-center gap-1">
+                    {bpmItem.tick > 0 && (
+                      <button 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          Swal.fire({
+                            title: 'Editar Marcador de BPM',
+                            html: `
+                              <label class="block text-left text-xs mb-1 text-zinc-400">Tick Inicial</label>
+                              <input id="swal-tick" type="number" class="swal2-input !mt-0 mb-3 bg-zinc-900 border-dark-border text-white text-sm" value="${bpmItem.tick}">
+                              <label class="block text-left text-xs mb-1 text-zinc-400">Valor BPM</label>
+                              <input id="swal-bpm" type="number" step="0.1" class="swal2-input !mt-0 bg-zinc-900 border-dark-border text-white text-sm" value="${bpmItem.bpm}">
+                            `,
+                            showCancelButton: true,
+                            background: '#09090b',
+                            color: '#f4f4f5',
+                            confirmButtonColor: '#10b981',
+                            cancelButtonColor: '#3f3f46',
+                            confirmButtonText: 'Guardar',
+                            cancelButtonText: 'Cancelar',
+                            preConfirm: () => {
+                              const tick = parseFloat((document.getElementById('swal-tick') as HTMLInputElement).value);
+                              const bpm = parseFloat((document.getElementById('swal-bpm') as HTMLInputElement).value);
+                              if (isNaN(tick) || isNaN(bpm) || tick <= 0 || bpm <= 0) {
+                                Swal.showValidationMessage('Valores inválidos. Asegúrate de que el tick y BPM sean mayores a 0.');
+                                return false;
+                              }
+                              return { tick, bpm };
+                            }
+                          }).then(res => {
+                            if (res.isConfirmed) {
+                              removeBPMChange(bpmItem.tick);
+                              addBPMChange(res.value.tick, res.value.bpm);
+                              useChartStore.setState({ currentTick: res.value.tick });
+                            }
+                          });
+                        }}
+                        className="text-blue-400 hover:text-blue-300 p-1 rounded hover:bg-blue-400/20"
+                        title="Editar Marcador"
+                      >
+                        <Edit2 size={12} />
+                      </button>
+                    )}
+                    {bpmItem.tick > 0 && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); removeBPMChange(bpmItem.tick); }}
+                        className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-400/20"
+                        title="Eliminar Marcador"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )});
+          })()}
         </div>
       </div>
 

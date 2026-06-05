@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { audioEngine } from '../core/audio/audioEngine';
+import { BPMChange, tickToSeconds, normalizeBPMs } from '../core/utils/timeUtils';
 
 export interface Note {
   id: string;
@@ -35,7 +36,7 @@ export interface ValidationWarning {
 interface ChartState {
   // --- Core Song / Chart Data ---
   notes: Note[];
-  bpm: number;
+  bpms: BPMChange[];
   ticksPerBeat: number; // Defaults to 192 ticks per beat
   songName: string;
   audioFile: File | null;
@@ -110,7 +111,9 @@ interface ChartState {
   setAudioFile: (file: File | null) => void;
   setActiveNoteType: (type: 'strum' | 'hopo' | 'tap' | 'open' | 'kick_pedal' | 'star_power' | 'solo') => void;
   setActiveSustainDuration: (dur: number) => void;
-  setBPM: (bpm: number) => void;
+  addBPMChange: (tick: number, bpm: number) => void;
+  removeBPMChange: (tick: number) => void;
+  updateBPMChange: (tick: number, bpm: number) => void;
   updateNoteDuration: (id: string, duration: number) => void;
   updateMetadata: (meta: Partial<ChartState['metadata']>) => void;
   setLyricsText: (text: string) => void;
@@ -149,7 +152,7 @@ interface ChartState {
 
 export const useChartStore = create<ChartState>((set, get) => ({
   notes: [],
-  bpm: 120,
+  bpms: [{ tick: 0, bpm: 120 }],
   ticksPerBeat: 192,
   songName: 'demo_song.wav',
   audioFile: null,
@@ -224,7 +227,18 @@ export const useChartStore = create<ChartState>((set, get) => ({
     }
   },
   updateMetadata: (meta) => set((state) => ({ metadata: { ...state.metadata, ...meta } })),
-  setBPM: (bpm) => set({ bpm: Math.max(1, bpm) }),
+  addBPMChange: (tick, bpm) => set((state) => {
+    const newBpms = state.bpms.filter(b => b.tick !== tick);
+    newBpms.push({ tick, bpm: Math.max(1, bpm) });
+    return { bpms: normalizeBPMs(newBpms) };
+  }),
+  removeBPMChange: (tick) => set((state) => {
+    if (tick === 0) return state; // No eliminar el BPM inicial
+    return { bpms: state.bpms.filter(b => b.tick !== tick) };
+  }),
+  updateBPMChange: (tick, bpm) => set((state) => {
+    return { bpms: state.bpms.map(b => b.tick === tick ? { ...b, bpm: Math.max(1, bpm) } : b) };
+  }),
   setActiveNoteType: (type) => set({ activeNoteType: type }),
   setActiveSustainDuration: (dur) => set({ activeSustainDuration: dur }),
   setCoverFile: (file) => set({ coverFile: file }),
@@ -244,7 +258,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
     const isPlaying = !get().isPlaying;
     set({ isPlaying });
     const state = get();
-    const chartSeconds = state.currentTick / (state.ticksPerBeat * (state.bpm / 60));
+    const chartSeconds = tickToSeconds(state.currentTick, state.bpms, state.ticksPerBeat);
     const audioOffset = state.metadata.offset || 0;
     
     if (isPlaying) {
@@ -262,8 +276,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
     set({ currentTick: nextTick });
     
     // Synchronize audio playhead
-    const { bpm, ticksPerBeat, metadata } = get();
-    const chartSeconds = nextTick / (ticksPerBeat * (bpm / 60));
+    const { bpms, ticksPerBeat, metadata } = get();
+    const chartSeconds = tickToSeconds(nextTick, bpms, ticksPerBeat);
     const audioOffset = metadata.offset || 0;
     const targetAudioSeconds = chartSeconds - audioOffset;
 
@@ -470,9 +484,9 @@ export const useChartStore = create<ChartState>((set, get) => ({
     const state = get();
     // We explicitly extract what we want to save
     const projectData = {
-      version: '1.0',
+      version: '1.1',
       notes: state.notes,
-      bpm: state.bpm,
+      bpms: state.bpms,
       ticksPerBeat: state.ticksPerBeat,
       songName: state.songName,
       metadata: state.metadata,
@@ -496,7 +510,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
       
       set({
         notes: parsed.notes,
-        bpm: parsed.bpm || 120,
+        bpms: parsed.bpms || [{ tick: 0, bpm: parsed.bpm || 120 }],
         ticksPerBeat: parsed.ticksPerBeat || 192,
         songName: parsed.songName || 'demo_song.wav',
         metadata: parsed.metadata,
@@ -522,7 +536,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
   importChartData: (data: any) => {
     set({
       notes: data.notes,
-      bpm: data.bpm,
+      bpms: data.bpms || [{ tick: 0, bpm: data.bpm || 120 }],
       ticksPerBeat: data.resolution,
       metadata: { ...get().metadata, ...data.metadata },
       historyPast: [],

@@ -1,5 +1,6 @@
 // High Performance Multitrack & DSP Web Audio Engine.
 import { AISuggestion, Note } from '../../store/useChartStore';
+import { BPMChange, secondsToTick } from '../utils/timeUtils';
 
 class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -117,7 +118,7 @@ class AudioEngine {
   }
 
   // Precision Peak/Transient Detection DSP Algorithm
-  public analyzePeaks(bpm: number, ticksPerBeat: number, instrument: string = 'guitar'): AISuggestion[] {
+  public analyzePeaks(bpms: BPMChange[], ticksPerBeat: number, instrument: string = 'guitar'): AISuggestion[] {
     if (!this.decodedBuffer) {
       console.warn("Audio buffer not decoded yet. Fallback to standard grid.");
       return [];
@@ -144,8 +145,7 @@ class AudioEngine {
       // Dynamic onset thresholding
       if (energy > 0.09 && energy > previousEnergy * 1.45) {
         const timeSecs = i / sampleRate;
-        const beats = timeSecs * (bpm / 60);
-        const tick = Math.floor(beats * ticksPerBeat);
+        const tick = secondsToTick(timeSecs, bpms, ticksPerBeat);
         
         // Quantize/Snap to nearest 1/16 note (48 ticks at 192 ticks per beat)
         const snapTicks = 48;

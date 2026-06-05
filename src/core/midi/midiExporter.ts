@@ -1,9 +1,10 @@
 import { writeMidi, MidiData, MidiEvent } from 'midi-file';
 import { Note } from '../../store/useChartStore';
+import { BPMChange } from '../utils/timeUtils';
 
 export const exportToMidiFile = (
   notesList: Note[],
-  bpm: number,
+  bpmsList: BPMChange[],
   activeMeta: any,
   resolution: number = 192
 ): Uint8Array => {
@@ -41,13 +42,17 @@ export const exportToMidiFile = (
     },
     {
       tick: 0,
-      event: { type: 'setTempo', microsecondsPerBeat: Math.round(60000000 / bpm) }
-    },
-    {
-      tick: 0,
       event: { type: 'timeSignature', numerator: 4, denominator: 4, metronome: 24, thirtyseconds: 8 }
     }
   ];
+
+  bpmsList.forEach(b => {
+    syncEvents.push({
+      tick: b.tick,
+      event: { type: 'setTempo', microsecondsPerBeat: Math.round(60000000 / b.bpm) }
+    });
+  });
+
   midiData.tracks.push(createDeltaEvents(syncEvents));
 
   // Instrument mapping to Track Names

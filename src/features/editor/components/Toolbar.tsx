@@ -36,9 +36,9 @@ export const Toolbar: React.FC = () => {
   ];
 
   return (
-    <div className="h-14 bg-dark-panel border-b border-dark-border px-4 flex items-center justify-between gap-4 z-10 shrink-0">
+    <div className="h-14 bg-dark-panel border-b border-dark-border px-2 lg:px-4 flex items-center justify-between gap-2 lg:gap-4 z-10 shrink-0 overflow-x-auto hide-scrollbar">
       {/* 1. Playback Controls */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         <button
           onClick={togglePlay}
           className={`flex items-center justify-center p-2 rounded-lg transition-all ${
@@ -73,7 +73,7 @@ export const Toolbar: React.FC = () => {
       </div>
 
       {/* 2. Tools Selection */}
-      <div className="flex items-center bg-zinc-900 rounded-lg p-0.5 border border-dark-border">
+      <div className="flex items-center bg-zinc-900 rounded-lg p-0.5 border border-dark-border shrink-0">
         <button
           onClick={() => setSelectedTool('select')}
           className={`p-1.5 rounded-md flex items-center gap-1.5 text-xs font-medium transition-colors ${
@@ -101,7 +101,7 @@ export const Toolbar: React.FC = () => {
       </div>
 
       {/* 3. Instrument & Difficulty tabs */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 lg:gap-3 shrink-0">
         {/* Instrument dropdown/buttons */}
         <div className="flex items-center bg-zinc-900 border border-dark-border rounded-lg p-0.5">
           {instruments.map((inst) => {
@@ -147,7 +147,7 @@ export const Toolbar: React.FC = () => {
       </div>
 
       {/* 4. Grid, Quantization & Zoom Controls */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 lg:gap-3 shrink-0 pr-2 lg:pr-0">
         {/* Snap to Grid */}
         <button
           onClick={() => setSnapToGrid(!snapToGrid)}

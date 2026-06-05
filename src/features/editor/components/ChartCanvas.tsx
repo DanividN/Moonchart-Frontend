@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useChartStore } from '../../../store/useChartStore';
 import { audioEngine } from '../../../core/audio/audioEngine';
+import { tickToSeconds, secondsToTick } from '../../../core/utils/timeUtils';
 
 export const ChartCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -8,7 +9,7 @@ export const ChartCanvas: React.FC = () => {
   // Connect Zustand Store states
   const {
     notes,
-    bpm,
+    bpms,
     isPlaying,
     currentTick,
     ticksPerBeat,
@@ -49,6 +50,7 @@ export const ChartCanvas: React.FC = () => {
 
   const [hoveredPhraseId, setHoveredPhraseId] = useState<string | null>(null);
   const [hoveredPhraseEdge, setHoveredPhraseEdge] = useState<'top' | 'bottom' | null>(null);
+  const [isHoveringBPM, setIsHoveringBPM] = useState(false);
   const [draggedPhraseId, setDraggedPhraseId] = useState<string | null>(null);
   const [draggedPhraseEdge, setDraggedPhraseEdge] = useState<'top' | 'bottom' | null>(null);
   const [isDraggingMinimap, setIsDraggingMinimap] = useState(false);
@@ -181,6 +183,23 @@ export const ChartCanvas: React.FC = () => {
         }
       }
 
+      // Add BPM alternating background tint
+      bpms.forEach((bpmChange, idx) => {
+        const nextTick = idx < bpms.length - 1 ? bpms[idx+1].tick : Math.max(currentTick + 192000, bpmChange.tick + 192000);
+        const yStart = tickToY(bpmChange.tick, height);
+        const yEnd = tickToY(nextTick, height);
+        
+        const topY = Math.min(yStart, yEnd);
+        const bottomY = Math.max(yStart, yEnd);
+
+        if (bottomY >= 0 && topY <= height) {
+          if (idx % 2 === 1) {
+             ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
+             ctx.fillRect(startX, Math.max(0, topY), totalHighwayWidth, Math.min(height, bottomY) - Math.max(0, topY));
+          }
+        }
+      });
+
       // 4. Draw Beat & Measure Grid Lines (Dynamic frustum)
       const ticksPerInterval = ticksPerBeat / (quantization / 4);
       const startVisibleTick = Math.max(0, yToTick(height, height) - 100);
@@ -214,6 +233,24 @@ export const ChartCanvas: React.FC = () => {
         ctx.stroke();
       }
 
+      // 4b. Draw BPM Markers
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.8)'; // Green text
+      ctx.font = 'bold 10px Inter';
+      ctx.textAlign = 'left';
+      bpms.forEach(bpmChange => {
+        const y = tickToY(bpmChange.tick, height);
+        if (y < -20 || y > height + 20) return;
+        
+        ctx.fillText(`${bpmChange.bpm} BPM`, startX + totalHighwayWidth + 10, y + 4);
+        
+        ctx.strokeStyle = 'rgba(16, 185, 129, 0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(startX, y);
+        ctx.lineTo(startX + totalHighwayWidth + 8, y);
+        ctx.stroke();
+      });
+
       // 5. Render Waveform real or mock visualization
       ctx.strokeStyle = 'rgba(59, 130, 246, 0.15)';
       ctx.lineWidth = 1.5;
@@ -229,7 +266,7 @@ export const ChartCanvas: React.FC = () => {
         let amplitude = 0;
 
         if (hasRealWaveform) {
-           const timeSecs = t / (ticksPerBeat * (bpm / 60));
+           const timeSecs = tickToSeconds(t, bpms, ticksPerBeat);
            const audioTimeSecs = timeSecs - audioOffset;
            const fraction = audioTimeSecs / audioDuration;
            if (fraction >= 0 && fraction <= 1) {
@@ -252,7 +289,7 @@ export const ChartCanvas: React.FC = () => {
       ctx.stroke();
 
       // 5b. Draw Audio Offset Handle (Zero-line marker)
-      const offsetTick = audioOffset * ticksPerBeat * (bpm / 60);
+      const offsetTick = secondsToTick(audioOffset, bpms, ticksPerBeat);
       const offsetY = tickToY(offsetTick, height);
       if (offsetY >= 0 && offsetY <= height) {
         ctx.strokeStyle = isHoveringOffsetHandle || isDraggingOffset ? '#10b981' : 'rgba(16, 185, 129, 0.4)';
@@ -615,12 +652,13 @@ export const ChartCanvas: React.FC = () => {
       ctx.fillStyle = 'rgba(244, 244, 245, 0.5)';
       ctx.font = '11px JetBrains Mono';
       ctx.textAlign = 'right';
-      ctx.fillText(`TIME: ${(currentTick / ticksPerBeat / 2).toFixed(2)}s | TICK: ${currentTick}`, width - 100, height - 20);
+      const timeInSecs = tickToSeconds(currentTick, bpms, ticksPerBeat);
+      ctx.fillText(`TIME: ${timeInSecs.toFixed(2)}s | TICK: ${currentTick}`, width - 100, height - 20);
 
       // 10. Draw VS Code style high-tech minimap
       const duration = audioEngine.getDuration() || 180;
       const songEndTick = Math.max(
-        duration * (bpm / 60) * ticksPerBeat,
+        secondsToTick(duration, bpms, ticksPerBeat),
         notes.length > 0 ? Math.max(...notes.map(n => n.tick)) + 1920 : 19200
       );
 
@@ -670,6 +708,19 @@ export const ChartCanvas: React.FC = () => {
         ctx.fillRect(noteMinimapX, noteMinimapY - 1, 8, 2);
       });
 
+      // Render BPM markers in minimap
+      bpms.forEach(bpmChange => {
+        const y = minimapY + minimapHeight - (bpmChange.tick / songEndTick) * minimapHeight;
+        if (y >= minimapY && y <= minimapY + minimapHeight) {
+          ctx.strokeStyle = 'rgba(16, 185, 129, 0.8)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(minimapX, y);
+          ctx.lineTo(minimapX + minimapWidth, y);
+          ctx.stroke();
+        }
+      });
+
       // Draw Viewport Box (currently visible tick range)
       const visibleStartTick = yToTick(height, height);
       const visibleEndTick = yToTick(0, height);
@@ -715,7 +766,7 @@ export const ChartCanvas: React.FC = () => {
     return () => {
       cancelAnimationFrame(animationId);
     };
-  }, [notes, isPlaying, currentTick, zoomX, zoomY, quantization, hoveredLane, hoveredTick, selectedTool, activeInstrument, activeDifficulty, snapToGrid, aiSuggestions, hoveredNoteId, draggedMoveNoteId, selectedNoteIds, selectionBox, isSelecting, isDraggingSelected, isHoveringOffsetHandle, isDraggingOffset]);
+  }, [notes, isPlaying, currentTick, zoomX, zoomY, quantization, hoveredLane, hoveredTick, selectedTool, activeInstrument, activeDifficulty, snapToGrid, aiSuggestions, hoveredNoteId, draggedMoveNoteId, selectedNoteIds, selectionBox, isSelecting, isDraggingSelected, isHoveringOffsetHandle, isDraggingOffset, bpms]);
 
   // Selection Key Shortcut Handlers
   useEffect(() => {
@@ -816,12 +867,15 @@ export const ChartCanvas: React.FC = () => {
       const delta = now - lastTime;
       lastTime = now;
 
-      const beatsPerSecond = bpm / 60;
-      const ticksPerSecond = beatsPerSecond * ticksPerBeat;
+      const currentState = useChartStore.getState();
+      const currentTick = currentState.currentTick;
+      const bpms = currentState.bpms;
+      const ticksPerBeat = currentState.ticksPerBeat;
       
-      const currentTick = useChartStore.getState().currentTick;
-      const nextTickOffline = currentTick + (ticksPerSecond * delta) / 1000;
-      const chartTimeOffline = nextTickOffline / ticksPerSecond;
+      const currentTimeOffline = tickToSeconds(currentTick, bpms, ticksPerBeat);
+      const nextTimeOffline = currentTimeOffline + (delta / 1000);
+      const nextTickOffline = secondsToTick(nextTimeOffline, bpms, ticksPerBeat);
+      const chartTimeOffline = nextTimeOffline;
 
       if (hasAudio) {
         if (chartTimeOffline < audioOffset) {
@@ -840,7 +894,7 @@ export const ChartCanvas: React.FC = () => {
           }
           // High-precision sync with AudioEngine clock
           const currentTime = audioEngine.getCurrentTime();
-          const calculatedTick = (currentTime + audioOffset) * ticksPerSecond;
+          const calculatedTick = secondsToTick(currentTime + audioOffset, bpms, ticksPerBeat);
           setCurrentTick(calculatedTick);
         }
       } else {
@@ -850,7 +904,7 @@ export const ChartCanvas: React.FC = () => {
     }, 16);
 
     return () => clearInterval(interval);
-  }, [isPlaying, bpm, ticksPerBeat, setCurrentTick]);
+  }, [isPlaying, bpms, ticksPerBeat, setCurrentTick]);
 
   // Mouse Interactions
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -909,7 +963,8 @@ export const ChartCanvas: React.FC = () => {
     // Offset visual dragging
     if (isDraggingOffset && dragOffsetStartY !== null) {
       const deltaY = e.clientY - rect.top - dragOffsetStartY;
-      const pixelsPerSecond = zoomY * ticksPerBeat * (bpm / 60);
+      const initialBpm = useChartStore.getState().bpms[0].bpm;
+      const pixelsPerSecond = zoomY * ticksPerBeat * (initialBpm / 60);
       const deltaSeconds = deltaY / pixelsPerSecond;
       
       const newOffset = Math.max(0, dragOffsetStartValue - deltaSeconds);
@@ -922,7 +977,7 @@ export const ChartCanvas: React.FC = () => {
 
     // Check Offset Handle Hover
     const audioOffset = useChartStore.getState().metadata.offset || 0;
-    const offsetTick = audioOffset * (useChartStore.getState().bpm / 60) * useChartStore.getState().ticksPerBeat;
+    const offsetTick = secondsToTick(audioOffset, useChartStore.getState().bpms, useChartStore.getState().ticksPerBeat);
     const offsetY = tickToY(offsetTick, canvas.height);
     
     if (x >= startX && x <= startX + totalHighwayWidth && Math.abs(y - offsetY) < 15) {
@@ -937,7 +992,7 @@ export const ChartCanvas: React.FC = () => {
     if (isDraggingMinimap && y !== null) {
       const duration = audioEngine.getDuration() || 180;
       const songEndTick = Math.max(
-        duration * (bpm / 60) * ticksPerBeat,
+        secondsToTick(duration, bpms, ticksPerBeat),
         notes.length > 0 ? Math.max(...notes.map(n => n.tick)) + 1920 : 19200
       );
       const minimapHeight = canvas.height - 60;
@@ -1094,6 +1149,18 @@ export const ChartCanvas: React.FC = () => {
         updateNoteDuration(draggedNoteId, duration);
       }
     }
+
+    // 6. Detect Hover over BPM markers
+    let hoveringBPM = false;
+    const currentState = useChartStore.getState();
+    for (const bpmChange of currentState.bpms) {
+      const bpmY = tickToY(bpmChange.tick, canvas.height);
+      if (Math.abs(y - bpmY) < 15 && x >= startX && x <= startX + totalHighwayWidth + 40) {
+        hoveringBPM = true;
+        break;
+      }
+    }
+    setIsHoveringBPM(hoveringBPM);
   };
 
   const handleMouseLeave = () => {
@@ -1125,7 +1192,7 @@ export const ChartCanvas: React.FC = () => {
       setIsDraggingMinimap(true);
       const duration = audioEngine.getDuration() || 180;
       const songEndTick = Math.max(
-        duration * (bpm / 60) * ticksPerBeat,
+        secondsToTick(duration, bpms, ticksPerBeat),
         notes.length > 0 ? Math.max(...notes.map(n => n.tick)) + 1920 : 19200
       );
       const pct = 1 - ((y - 20) / minimapHeight);
@@ -1136,7 +1203,7 @@ export const ChartCanvas: React.FC = () => {
 
     // Offset visual dragging (Clicking on the Offset Handle)
     const audioOffset = useChartStore.getState().metadata.offset || 0;
-    const offsetTick = audioOffset * (useChartStore.getState().bpm / 60) * useChartStore.getState().ticksPerBeat;
+    const offsetTick = secondsToTick(audioOffset, useChartStore.getState().bpms, useChartStore.getState().ticksPerBeat);
     const offsetY = tickToY(offsetTick, canvas.height);
 
     if (x >= startX && x <= startX + totalHighwayWidth && Math.abs(y - offsetY) < 15) {
@@ -1342,12 +1409,43 @@ export const ChartCanvas: React.FC = () => {
   };
 
   const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (activeInstrument !== 'vocals') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+
+    const totalHighwayWidth = LANE_COUNT * LANE_WIDTH;
+    const startX = (canvas.width - totalHighwayWidth) / 2;
+    
+    // Check BPMs
+    const currentState = useChartStore.getState();
+    for (const bpmChange of currentState.bpms) {
+      const bpmY = tickToY(bpmChange.tick, canvas.height);
+      if (Math.abs(y - bpmY) < 15 && x >= startX && x <= startX + totalHighwayWidth + 40) {
+        Swal.fire({
+          title: 'Editar BPM',
+          input: 'number',
+          inputLabel: `BPM actual: ${bpmChange.bpm}`,
+          inputValue: bpmChange.bpm,
+          showCancelButton: true,
+          background: '#09090b',
+          color: '#f4f4f5',
+          confirmButtonColor: '#10b981',
+          inputValidator: (value) => {
+            if (!value || parseFloat(value) <= 0) return 'El BPM debe ser mayor a 0';
+          }
+        }).then(res => {
+          if (res.isConfirmed) {
+            currentState.addBPMChange(bpmChange.tick, parseFloat(res.value));
+          }
+        });
+        return;
+      }
+    }
+
+    if (activeInstrument !== 'vocals') return;
 
     // Find if double click was near any vocal lyric note
     const clickedNote = notes.find(n => 
@@ -1395,7 +1493,9 @@ export const ChartCanvas: React.FC = () => {
         onContextMenu={(e) => e.preventDefault()}
         className="block w-full h-full"
         style={{ 
-          cursor: draggedMoveNoteId 
+          cursor: isHoveringBPM
+            ? 'text'
+            : draggedMoveNoteId 
             ? 'grabbing' 
             : hoveredNoteId 
               ? 'grab' 

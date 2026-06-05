@@ -17,7 +17,7 @@ export const KeyboardLegend: React.FC = () => {
   ];
 
   return (
-    <div className="absolute bottom-4 left-4 z-20">
+    <div className="absolute bottom-4 left-4 z-20 hidden md:block">
       {!isOpen ? (
         <button
           onClick={() => setIsOpen(true)}

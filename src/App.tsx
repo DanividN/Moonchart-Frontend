@@ -5,19 +5,20 @@ import { ChartCanvas } from './features/editor/components/ChartCanvas';
 import { NoteTypePalette } from './features/editor/components/NoteTypePalette';
 import { KeyboardLegend } from './features/editor/components/KeyboardLegend';
 import { useChartStore } from './store/useChartStore';
-import { Disc, Music4, Upload, Download, Save, FolderOpen } from 'lucide-react';
+import { Disc, Music4, Upload, Download, Save, FolderOpen, Menu, X } from 'lucide-react';
 import { MetadataModal } from './features/editor/components/MetadataModal';
 import Swal from 'sweetalert2';
 import { exportToMidiFile } from './core/midi/midiExporter';
 import { parseChartFile } from './core/parser/chartParser';
+import { getBPMAtTick } from './core/utils/timeUtils';
 
 const App: React.FC = () => {
   const { 
     notes, 
     activeInstrument, 
     activeDifficulty, 
-    bpm, 
-    setBPM,
+    bpms,
+    currentTick,
     songName, 
     audioFile, 
     metadata,
@@ -27,6 +28,7 @@ const App: React.FC = () => {
   } = useChartStore();
   
   const [isMetadataOpen, setIsMetadataOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const currentChartNotes = notes.filter(n => n.instrument === activeInstrument && n.difficulty === activeDifficulty);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
@@ -129,10 +131,14 @@ const App: React.FC = () => {
     }
   };
 
-  const exportToChartFile = (notesList: any[], beatsPerMin: number, activeMeta: typeof metadata, resolution: number = 192) => {
+  const exportToChartFile = (notesList: any[], bpmsList: any[], activeMeta: typeof metadata, resolution: number = 192) => {
     const audioOffset = activeMeta.offset || 0;
     let output = `[Song]\n{\n  Name = "${activeMeta.name}"\n  Artist = "${activeMeta.artist}"\n  Charter = "${activeMeta.charter}"\n  Album = "${activeMeta.album}"\n  Year = "${activeMeta.year}"\n  Genre = "${activeMeta.genre}"\n  Offset = ${audioOffset}\n  Resolution = ${resolution}\n  Player2 = bass\n  Difficulty = 0\n  PreviewStart = 0\n  PreviewLength = 0\n  SyncTrack = 0\n}\n`;
-    output += `[SyncTrack]\n{\n  0 = TS 4\n  0 = B ${beatsPerMin * 1000}\n}\n`;
+    output += `[SyncTrack]\n{\n  0 = TS 4\n`;
+    bpmsList.forEach(b => {
+      output += `  ${b.tick} = B ${Math.round(b.bpm * 1000)}\n`;
+    });
+    output += `}\n`;
 
     // 1. Serialize Vocals inside Events track as Clone Hero standard lyrics
     let vocalNotes = notesList.filter(n => n.instrument === 'vocals' && n.difficulty === activeDifficulty);
@@ -248,16 +254,17 @@ const App: React.FC = () => {
 
       // 1. Generate notes file (chart or mid)
       if (exportFormat === 'chart') {
-        const chartContent = exportToChartFile(notes, bpm, activeMeta);
+        const chartContent = exportToChartFile(notes, bpms, activeMeta);
         zip.file("notes.chart", chartContent);
       } else {
-        const midiContent = exportToMidiFile(notes, bpm, activeMeta);
+        const midiContent = exportToMidiFile(notes, bpms, activeMeta);
         zip.file("notes.mid", midiContent);
       }
 
       // 2. Generate song.ini metadata file using customized fields
       const maxTick = notes.length > 0 ? Math.max(...notes.map(n => n.tick)) : 1000;
-      const songLengthMs = Math.floor((maxTick / 192) * (60 / bpm) * 1000);
+      const { tickToSeconds } = await import('./core/utils/timeUtils');
+      const songLengthMs = Math.floor(tickToSeconds(maxTick, bpms, 192) * 1000);
 
       const songIniContent = `[song]
 name = ${activeMeta.name}
@@ -368,44 +375,36 @@ loading_phrase = Created in Mooncharts Pro!
     <div className="flex flex-col h-screen w-screen bg-dark-bg font-sans overflow-hidden select-none">
       
       {/* Premium Header */}
-      <header className="h-12 bg-zinc-950 border-b border-dark-border px-4 flex items-center justify-between gap-4 z-10 shrink-0">
+      <header className="h-14 lg:h-12 bg-zinc-950 border-b border-dark-border px-2 lg:px-4 flex items-center justify-between gap-2 lg:gap-4 z-20 shrink-0 overflow-x-auto hide-scrollbar">
         <div className="flex items-center gap-2.5">
           <div className="h-7 w-7 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center glow-blue text-white shadow-lg">
             <Disc size={15} className="animate-spin" style={{ animationDuration: '4s' }} />
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col hidden sm:flex">
             <span className="text-xs font-black uppercase tracking-wider text-zinc-100">Mooncharts</span>
             <span className="text-[9px] font-medium text-dark-muted -mt-0.5">ESTILO MOONSCRAPER PRO CHART EDITOR</span>
           </div>
         </div>
 
         {/* Dynamic Project Status Pills */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 px-2 py-0.8 rounded-full bg-zinc-900 border border-dark-border text-[10px] text-dark-muted">
+        <div className="flex items-center gap-2 lg:gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 px-2 py-0.8 rounded-full bg-zinc-900 border border-dark-border text-[10px] text-dark-muted shrink-0">
             <Music4 size={11} className="text-blue-500" />
-            <span>Pista: <strong className="text-zinc-200">{songName}</strong></span>
+            <span>Pista: <strong className="text-zinc-200 truncate max-w-[80px] sm:max-w-[150px] inline-block align-bottom">{songName}</strong></span>
           </div>
           <div className="flex items-center gap-1.5 px-2 py-0.8 rounded-full bg-zinc-900 border border-dark-border text-[10px] text-dark-muted">
-            <label className="flex items-center gap-1 cursor-pointer">
-              <span>BPM:</span>
-              <input
-                type="number"
-                min="1"
-                max="999"
-                value={bpm}
-                onChange={(e) => setBPM(Number(e.target.value))}
-                className="w-10 bg-transparent text-zinc-200 font-bold outline-none border-none p-0 text-[10px] text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:ring-1 focus:ring-indigo-500 rounded px-0.5"
-                title="Cambiar BPM"
-              />
+            <label className="flex items-center gap-1">
+              <span title="BPM en la posición actual">BPM Actual:</span>
+              <span className="font-bold text-emerald-400">{getBPMAtTick(currentTick, bpms)}</span>
             </label>
           </div>
-          <div className="flex items-center gap-1.5 px-2 py-0.8 rounded-full bg-zinc-900 border border-dark-border text-[10px] text-dark-muted">
-            <span>Notas en Pista: <strong className="text-zinc-200">{currentChartNotes.length}</strong></span>
+          <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.8 rounded-full bg-zinc-900 border border-dark-border text-[10px] text-dark-muted shrink-0">
+            <span>Notas: <strong className="text-zinc-200">{currentChartNotes.length}</strong></span>
           </div>
         </div>
 
         {/* Load & Export Actions */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Project Load / Save */}
           <input 
             type="file" 
@@ -420,7 +419,7 @@ loading_phrase = Created in Mooncharts Pro!
             title="Cargar Proyecto Naitvo (.moonproject)"
           >
             <FolderOpen size={13} className="text-amber-400" />
-            <span>Cargar Proyecto</span>
+            <span className="hidden lg:inline">Cargar Proyecto</span>
           </button>
 
           <button
@@ -429,7 +428,7 @@ loading_phrase = Created in Mooncharts Pro!
             title="Guardar Proyecto para editarlo luego"
           >
             <Save size={13} className="text-indigo-400" />
-            <span>Guardar Proyecto</span>
+            <span className="hidden lg:inline">Guardar Proyecto</span>
           </button>
 
           <div className="w-px h-5 bg-dark-border mx-1"></div>
@@ -447,7 +446,7 @@ loading_phrase = Created in Mooncharts Pro!
             title="Importar archivo .chart"
           >
             <FolderOpen size={13} className="text-emerald-400" />
-            <span>Importar .chart</span>
+            <span className="hidden lg:inline">Importar .chart</span>
           </button>
 
           <div className="w-px h-5 bg-dark-border mx-1"></div>
@@ -465,7 +464,7 @@ loading_phrase = Created in Mooncharts Pro!
             title="Cargar archivo MP3 o WAV"
           >
             <Upload size={13} className="text-blue-400" />
-            <span>Cargar MP3/WAV</span>
+            <span className="hidden lg:inline">Cargar MP3/WAV</span>
           </button>
           
           <button
@@ -474,7 +473,18 @@ loading_phrase = Created in Mooncharts Pro!
             title="Personalizar propiedades y exportar como carpeta Clone Hero"
           >
             <Download size={13} />
-            <span>Exportar Carpeta</span>
+            <span className="hidden lg:inline">Exportar Carpeta</span>
+          </button>
+
+          <div className="w-px h-5 bg-dark-border mx-1 lg:hidden"></div>
+
+          {/* Mobile Sidebar Toggle */}
+          <button
+            onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+            className="lg:hidden flex items-center justify-center p-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-600/20 transition-all active:scale-95 glow-purple"
+            title="Abrir Mezclador y AI"
+          >
+            {isMobileSidebarOpen ? <X size={16} /> : <Menu size={16} />}
           </button>
         </div>
 
@@ -497,8 +507,24 @@ loading_phrase = Created in Mooncharts Pro!
           </div>
         </div>
 
-        {/* Stems mixers & AI recommendation board */}
-        <Sidebar />
+        {/* Stems mixers & AI recommendation board (Responsive Off-canvas on Mobile) */}
+        <div 
+          className={`
+            absolute lg:relative right-0 top-0 h-full z-40 transition-transform duration-300 ease-in-out
+            ${isMobileSidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
+            shadow-[-10px_0_30px_rgba(0,0,0,0.5)] lg:shadow-none
+          `}
+        >
+          <Sidebar />
+        </div>
+
+        {/* Mobile Backdrop for Sidebar */}
+        {isMobileSidebarOpen && (
+          <div 
+            className="absolute inset-0 bg-black/60 z-30 lg:hidden backdrop-blur-sm"
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+        )}
       </div>
 
       {/* Modal interactivo de personalización de metadatos */}

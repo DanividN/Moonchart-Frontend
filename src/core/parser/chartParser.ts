@@ -1,4 +1,5 @@
 import { Note } from '../../store/useChartStore';
+import { BPMChange, normalizeBPMs } from '../utils/timeUtils';
 
 export interface ParseResult {
   metadata: {
@@ -10,7 +11,7 @@ export interface ParseResult {
     genre: string;
   };
   resolution: number;
-  bpm: number;
+  bpms: BPMChange[];
   notes: Note[];
 }
 
@@ -25,7 +26,7 @@ export const parseChartFile = (content: string): ParseResult => {
       genre: 'Unknown'
     },
     resolution: 192,
-    bpm: 120,
+    bpms: [],
     notes: []
   };
 
@@ -73,10 +74,16 @@ export const parseChartFile = (content: string): ParseResult => {
       }
     } else if (currentSection === 'SyncTrack') {
       // 0 = B 120000 -> 120 bpm
-      const match = line.match(/^\d+\s*=\s*B\s+(\d+)$/);
-      if (match && result.bpm === 120) {
-        // Just take the first BPM for now, since Mooncharts supports a global BPM
-        result.bpm = parseInt(match[1]) / 1000;
+      const match = line.match(/^(\d+)\s*=\s*B\s+(\d+)$/);
+      if (match) {
+        const tick = parseInt(match[1]);
+        const bpmVal = parseInt(match[2]) / 1000;
+        const existing = result.bpms.find(b => b.tick === tick);
+        if (existing) {
+          existing.bpm = bpmVal;
+        } else {
+          result.bpms.push({ tick, bpm: bpmVal });
+        }
       }
     } else if (currentSection === 'Events') {
       const match = line.match(/^(\d+)\s*=\s*E\s+"(.*)"$/);
@@ -166,5 +173,6 @@ export const parseChartFile = (content: string): ParseResult => {
     }
   }
 
+  result.bpms = normalizeBPMs(result.bpms);
   return result;
 };
